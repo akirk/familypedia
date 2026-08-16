@@ -47,7 +47,7 @@ $familypedia_notice = Editor::take_notice();
 			<form class="familypedia-search" role="search" method="get" action="<?php echo esc_url( home_url( '/' . App::URL_PATH . '/people/' ) ); ?>">
 				<label class="screen-reader-text" for="familypedia-search-field"><?php esc_html_e( 'Search people', 'familypedia' ); ?></label>
 				<input id="familypedia-search-field" type="search" name="s" value="<?php echo esc_attr( isset( $_GET['s'] ) ? sanitize_text_field( wp_unslash( $_GET['s'] ) ) : '' ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended ?>" placeholder="<?php esc_attr_e( 'Search people…', 'familypedia' ); ?>" />
-				<button type="submit"><?php esc_html_e( 'Search', 'familypedia' ); ?></button>
+				<button type="submit" class="familypedia-button"><?php esc_html_e( 'Search', 'familypedia' ); ?></button>
 			</form>
 		</header>
 
