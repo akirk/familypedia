@@ -2,61 +2,116 @@
 namespace Familypedia;
 
 class Gedcom {
-	const MENU_SLUG = 'familypedia-gedcom';
+	const URL_PATH = 'import-export';
+	const EXPORT_ACTION = 'familypedia_gedcom_export';
+	const IMPORT_ACTION = 'familypedia_gedcom_import';
+	const SELECT_ACTION = 'familypedia_gedcom_import_selected';
 	const XREF_META = '_familypedia_gedcom_xref';
 	const IMPORT_TRANSIENT_PREFIX = 'familypedia_gedcom_import_';
 
+	/**
+	 * The instance Main built, so that the app template renders the page
+	 * through the object that already handled the request.
+	 *
+	 * @var Gedcom|null
+	 */
+	private static $instance;
+
 	public function __construct() {
-		add_action( 'admin_menu', array( $this, 'admin_menu' ) );
-		add_action( 'admin_init', array( $this, 'register_importer' ) );
-		add_action( 'admin_bar_menu', array( $this, 'admin_bar_menu' ), 81 );
-		add_action( 'admin_post_familypedia_gedcom_export', array( $this, 'export_download' ) );
-	}
-
-	public function admin_menu() {
-		add_management_page(
-			__( 'Familypedia', 'familypedia' ),
-			__( 'Familypedia', 'familypedia' ),
-			'manage_options',
-			self::MENU_SLUG,
-			array( $this, 'render_page' )
-		);
-	}
-
-	public function render_page() {
-		if ( ! current_user_can( 'manage_options' ) ) {
-			return;
+		if ( ! self::$instance ) {
+			self::$instance = $this;
 		}
 
-		?>
-		<div class="wrap">
-			<h1><?php esc_html_e( 'Familypedia', 'familypedia' ); ?></h1>
-			<h2><?php esc_html_e( 'Export', 'familypedia' ); ?></h2>
-			<p><?php esc_html_e( 'Download the people on this wiki as a GEDCOM file.', 'familypedia' ); ?></p>
-			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
-				<input type="hidden" name="action" value="familypedia_gedcom_export" />
-				<?php wp_nonce_field( 'familypedia_gedcom_export' ); ?>
-				<?php submit_button( __( 'Download GEDCOM', 'familypedia' ), 'primary', 'submit', false ); ?>
-			</form>
-			<hr />
-			<h2><?php esc_html_e( 'Import', 'familypedia' ); ?></h2>
-			<?php $this->render_upload_form(); ?>
-		</div>
-		<?php
+		add_action( 'wp_loaded', array( $this, 'maybe_handle' ) );
+	}
+
+	public static function get_page_url() {
+		return home_url( '/' . App::URL_PATH . '/' . self::URL_PATH . '/' );
 	}
 
 	/**
-	 * The upload form, shown both here and on the standard import screen.
+	 * Exporting hands out everyone's dates and places at once, which is the
+	 * whole wiki in one file, so it stays with the people who administer it.
 	 */
+	public static function can_export() {
+		return current_user_can( 'manage_options' );
+	}
+
+	public static function can_import() {
+		return current_user_can( 'import' );
+	}
+
+	public static function can_use() {
+		return self::can_export() || self::can_import();
+	}
+
+	/**
+	 * The page body, for the app template.
+	 */
+	public static function render() {
+		$gedcom = self::$instance ? self::$instance : new self();
+		$gedcom->render_page();
+	}
+
+	/**
+	 * Handle the forms before any template output, so that an import can
+	 * redirect and an export can send its own headers.
+	 */
+	public function maybe_handle() {
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- every handler below checks its own nonce.
+		$action = isset( $_POST['familypedia_action'] ) ? sanitize_key( wp_unslash( $_POST['familypedia_action'] ) ) : '';
+
+		if ( self::EXPORT_ACTION === $action ) {
+			$this->export_download();
+		} elseif ( self::IMPORT_ACTION === $action ) {
+			$this->import_upload();
+		} elseif ( self::SELECT_ACTION === $action ) {
+			$this->import_selected();
+		}
+	}
+
+	public function render_page() {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$review = isset( $_GET['familypedia_review'] ) ? sanitize_key( wp_unslash( $_GET['familypedia_review'] ) ) : '';
+
+		if ( $review && self::can_import() ) {
+			$this->render_import_review( $review );
+			return;
+		}
+
+		if ( self::can_export() ) {
+			?>
+			<section class="familypedia-gedcom">
+				<h2><?php esc_html_e( 'Export', 'familypedia' ); ?></h2>
+				<p><?php esc_html_e( 'Download the people on this wiki as a GEDCOM file.', 'familypedia' ); ?></p>
+				<form method="post" action="<?php echo esc_url( self::get_page_url() ); ?>">
+					<input type="hidden" name="familypedia_action" value="<?php echo esc_attr( self::EXPORT_ACTION ); ?>" />
+					<?php wp_nonce_field( self::EXPORT_ACTION ); ?>
+					<button type="submit" class="familypedia-button familypedia-button--primary"><?php esc_html_e( 'Download GEDCOM', 'familypedia' ); ?></button>
+				</form>
+			</section>
+			<?php
+		}
+
+		if ( self::can_import() ) {
+			?>
+			<section class="familypedia-gedcom">
+				<h2><?php esc_html_e( 'Import', 'familypedia' ); ?></h2>
+				<?php $this->render_upload_form(); ?>
+			</section>
+			<?php
+		}
+	}
+
 	private function render_upload_form() {
 		?>
 		<p><?php esc_html_e( 'Upload a GEDCOM file, review the people in it, and choose which entries or descendant subtrees to import. Existing people are matched by prior GEDCOM xref first, then by name.', 'familypedia' ); ?></p>
-		<form method="post" enctype="multipart/form-data" action="<?php echo esc_url( admin_url( 'admin.php?import=familypedia-gedcom&noheader=true' ) ); ?>">
-			<?php wp_nonce_field( 'familypedia_gedcom_import' ); ?>
-			<input type="hidden" name="familypedia_gedcom_step" value="upload" />
+		<form method="post" enctype="multipart/form-data" action="<?php echo esc_url( self::get_page_url() ); ?>">
+			<?php wp_nonce_field( self::IMPORT_ACTION ); ?>
+			<input type="hidden" name="familypedia_action" value="<?php echo esc_attr( self::IMPORT_ACTION ); ?>" />
 			<p>
 				<input type="file" name="gedcom" accept=".ged,.gedcom,text/plain" required />
-				<span class="description">
+				<span class="familypedia-field__hint">
 					<?php
 					echo esc_html(
 						sprintf(
@@ -68,85 +123,8 @@ class Gedcom {
 					?>
 				</span>
 			</p>
-			<?php submit_button( __( 'Upload and review GEDCOM', 'familypedia' ), 'primary', 'submit', false ); ?>
+			<button type="submit" class="familypedia-button familypedia-button--primary"><?php esc_html_e( 'Upload and review GEDCOM', 'familypedia' ); ?></button>
 		</form>
-		<?php
-	}
-
-	public function register_importer() {
-		if ( ! function_exists( 'register_importer' ) ) {
-			return;
-		}
-
-		register_importer(
-			'familypedia-gedcom',
-			__( 'Familypedia', 'familypedia' ),
-			__( 'Import people and family relationships from a GEDCOM file into Familypedia.', 'familypedia' ),
-			array( $this, 'render_importer' )
-		);
-	}
-
-	public function admin_bar_menu( \WP_Admin_Bar $wp_admin_bar ) {
-		if ( ! current_user_can( 'manage_options' ) ) {
-			return;
-		}
-
-		$wp_admin_bar->add_node(
-			array(
-				'id'     => 'familypedia-import-export',
-				'parent' => Calendar::MENU_ID,
-				'title'  => __( 'Import / Export', 'familypedia' ),
-				'href'   => admin_url( 'tools.php?page=' . self::MENU_SLUG ),
-			)
-		);
-	}
-
-	public function render_importer() {
-		if ( ! current_user_can( 'import' ) ) {
-			wp_die( esc_html__( 'Sorry, you are not allowed to import GEDCOM data.', 'familypedia' ) );
-		}
-
-		if ( ! empty( $_POST['familypedia_gedcom_step'] ) ) {
-			$step = sanitize_key( wp_unslash( $_POST['familypedia_gedcom_step'] ) );
-			if ( 'upload' === $step ) {
-				$this->import_upload();
-			} elseif ( 'selected' === $step ) {
-				$this->import_selected();
-			}
-		}
-
-		$imported = isset( $_GET['familypedia_imported'] ) ? absint( $_GET['familypedia_imported'] ) : null;
-		$updated  = isset( $_GET['familypedia_updated'] ) ? absint( $_GET['familypedia_updated'] ) : null;
-		$error    = isset( $_GET['familypedia_error'] ) ? sanitize_key( $_GET['familypedia_error'] ) : '';
-		$review   = isset( $_GET['familypedia_review'] ) ? sanitize_key( $_GET['familypedia_review'] ) : '';
-		?>
-		<div class="wrap">
-			<h2><?php esc_html_e( 'Import Familypedia', 'familypedia' ); ?></h2>
-			<?php if ( null !== $imported && null !== $updated ) : ?>
-				<div class="notice notice-success">
-					<p>
-						<?php
-						echo esc_html(
-							sprintf(
-								// translators: %1$d is a number of people created, %2$d a number updated.
-								__( 'GEDCOM import complete. Created %1$d people and updated %2$d people.', 'familypedia' ),
-								$imported,
-								$updated
-							)
-						);
-						?>
-					</p>
-				</div>
-			<?php endif; ?>
-			<?php if ( $error ) : ?>
-				<div class="notice notice-error"><p><?php echo esc_html( $this->error_message( $error ) ); ?></p></div>
-			<?php endif; ?>
-			<?php if ( $review ) : ?>
-				<?php $this->render_import_review( $review ); ?>
-			<?php else : ?>
-				<?php $this->render_upload_form(); ?>
-			<?php endif; ?>
-		</div>
 		<?php
 	}
 
@@ -154,16 +132,18 @@ class Gedcom {
 		$contents = $this->get_import_file( $token );
 		if ( false === $contents ) {
 			?>
-			<div class="notice notice-error"><p><?php echo esc_html( $this->error_message( 'review_expired' ) ); ?></p></div>
+			<p class="familypedia-notice familypedia-notice--error"><?php echo esc_html( $this->error_message( 'review_expired' ) ); ?></p>
 			<?php
+			$this->render_upload_form();
 			return;
 		}
 
 		$records = $this->parse_records( $contents );
 		if ( empty( $records['INDI'] ) ) {
 			?>
-			<div class="notice notice-error"><p><?php echo esc_html( $this->error_message( 'no_individuals' ) ); ?></p></div>
+			<p class="familypedia-notice familypedia-notice--error"><?php echo esc_html( $this->error_message( 'no_individuals' ) ); ?></p>
 			<?php
+			$this->render_upload_form();
 			return;
 		}
 
@@ -200,12 +180,12 @@ class Gedcom {
 				);
 				?>
 			</p>
-			<form method="post" action="<?php echo esc_url( admin_url( 'admin.php?import=familypedia-gedcom&noheader=true' ) ); ?>">
-				<input type="hidden" name="familypedia_gedcom_step" value="selected" />
+			<form method="post" action="<?php echo esc_url( self::get_page_url() ); ?>">
+				<input type="hidden" name="familypedia_action" value="<?php echo esc_attr( self::SELECT_ACTION ); ?>" />
 				<input type="hidden" name="familypedia_review" value="<?php echo esc_attr( $token ); ?>" />
-				<?php wp_nonce_field( 'familypedia_gedcom_import_selected' ); ?>
+				<?php wp_nonce_field( self::SELECT_ACTION ); ?>
 				<p class="familypedia-gedcom-review__views">
-					<button type="button" class="button button-primary" data-familypedia-gedcom-view="connected">
+					<button type="button" class="familypedia-button familypedia-button--primary" data-familypedia-gedcom-view="connected">
 						<?php
 						echo esc_html(
 							sprintf(
@@ -216,7 +196,7 @@ class Gedcom {
 						);
 						?>
 					</button>
-					<button type="button" class="button" data-familypedia-gedcom-view="all">
+					<button type="button" class="familypedia-button" data-familypedia-gedcom-view="all">
 						<?php
 						echo esc_html(
 							sprintf(
@@ -227,16 +207,16 @@ class Gedcom {
 						);
 						?>
 					</button>
-					<input type="search" class="regular-text" data-familypedia-gedcom-filter placeholder="<?php esc_attr_e( 'Filter by name', 'familypedia' ); ?>" />
+					<input type="search" data-familypedia-gedcom-filter placeholder="<?php esc_attr_e( 'Filter by name', 'familypedia' ); ?>" />
 				</p>
 				<p>
-					<button type="button" class="button" data-familypedia-gedcom-select-all><?php esc_html_e( 'Select everyone shown', 'familypedia' ); ?></button>
-					<button type="button" class="button" data-familypedia-gedcom-clear><?php esc_html_e( 'Clear selection', 'familypedia' ); ?></button>
+					<button type="button" class="familypedia-button" data-familypedia-gedcom-select-all><?php esc_html_e( 'Select everyone shown', 'familypedia' ); ?></button>
+					<button type="button" class="familypedia-button" data-familypedia-gedcom-clear><?php esc_html_e( 'Clear selection', 'familypedia' ); ?></button>
 				</p>
-				<table class="widefat striped">
+				<table class="familypedia-gedcom-review__table">
 					<thead>
 						<tr>
-							<th scope="col" class="check-column"><span class="screen-reader-text"><?php esc_html_e( 'Import', 'familypedia' ); ?></span></th>
+							<th scope="col"><span class="screen-reader-text"><?php esc_html_e( 'Import', 'familypedia' ); ?></span></th>
 							<th scope="col"><?php esc_html_e( 'Person', 'familypedia' ); ?></th>
 							<th scope="col"><a href="#" data-familypedia-gedcom-sort="wiki"><?php esc_html_e( 'On your wiki', 'familypedia' ); ?></a></th>
 							<th scope="col"><a href="#" data-familypedia-gedcom-sort="subtree"><?php esc_html_e( 'Subtree', 'familypedia' ); ?></a></th>
@@ -254,14 +234,14 @@ class Gedcom {
 								data-subtree="<?php echo esc_attr( $person['count'] ); ?>"
 								<?php echo $person['wiki_hits'] ? 'data-connected="1"' : ''; ?>
 							>
-								<th scope="row" class="check-column">
+								<th scope="row">
 									<input type="checkbox" name="familypedia_people[]" value="<?php echo esc_attr( $person['xref'] ); ?>" data-familypedia-gedcom-person="<?php echo esc_attr( $person['xref'] ); ?>" />
 								</th>
 								<td>
 									<strong><?php echo esc_html( $person['name'] ); ?></strong>
 									<?php if ( $person['match_id'] ) : ?>
 										<br />
-										<span class="description">
+										<span class="familypedia-field__hint">
 											<?php
 											echo esc_html(
 												sprintf(
@@ -280,7 +260,7 @@ class Gedcom {
 								<td><?php echo esc_html( $person['death'] ); ?></td>
 								<td>
 									<?php if ( ! empty( $person['descendants'] ) ) : ?>
-										<button type="button" class="button button-small" data-familypedia-gedcom-descendants="<?php echo esc_attr( implode( ',', array_merge( array( $person['xref'] ), $person['descendants'] ) ) ); ?>">
+										<button type="button" class="familypedia-button familypedia-button--small" data-familypedia-gedcom-descendants="<?php echo esc_attr( implode( ',', array_merge( array( $person['xref'] ), $person['descendants'] ) ) ); ?>">
 											<?php
 											echo esc_html(
 												sprintf(
@@ -306,9 +286,9 @@ class Gedcom {
 					data-familypedia-gedcom-toggle-label="<?php esc_attr_e( 'Show or hide this branch', 'familypedia' ); ?>"
 				>
 					<h3><?php esc_html_e( 'Selected people', 'familypedia' ); ?></h3>
-					<p class="description" data-familypedia-gedcom-tree-empty><?php esc_html_e( 'Tick people above and the branches you picked are drawn here, so you can drop the ones you did not mean to take.', 'familypedia' ); ?></p>
+					<p class="familypedia-field__hint" data-familypedia-gedcom-tree-empty><?php esc_html_e( 'Tick people above and the branches you picked are drawn here, so you can drop the ones you did not mean to take.', 'familypedia' ); ?></p>
 					<ul class="familypedia-gedcom-tree__list" data-familypedia-gedcom-tree-list></ul>
-					<p class="description" data-familypedia-gedcom-tree-more hidden>
+					<p class="familypedia-field__hint" data-familypedia-gedcom-tree-more hidden>
 						<?php
 						echo esc_html(
 							sprintf(
@@ -334,493 +314,21 @@ class Gedcom {
 						?>
 					</strong>
 				</p>
-				<?php submit_button( __( 'Import selected people', 'familypedia' ) ); ?>
+				<p>
+					<button type="submit" class="familypedia-button familypedia-button--primary"><?php esc_html_e( 'Import selected people', 'familypedia' ); ?></button>
+				</p>
 			</form>
-			<style>
-				.familypedia-gedcom-tree__list,
-				.familypedia-gedcom-tree__list ul {
-					list-style: none;
-					margin: 0;
-					padding: 0;
-				}
-
-				.familypedia-gedcom-tree__list ul {
-					border-left: 1px solid rgba(127, 127, 127, 0.3);
-					margin-left: 0.4em;
-					padding-left: 1.1em;
-				}
-
-				.familypedia-gedcom-tree__list li {
-					line-height: 1.6;
-					margin: 0.15em 0;
-				}
-
-				.familypedia-gedcom-tree__line--branch [data-familypedia-gedcom-node] {
-					cursor: pointer;
-				}
-
-				.familypedia-gedcom-tree__years {
-					color: rgba(127, 127, 127, 0.9);
-					white-space: nowrap;
-				}
-
-				/*
-				 * Two classes deep, because .wp-core-ui .button-link zeroes the
-				 * margin and pins the text left, and would win against one.
-				 */
-				.familypedia-gedcom-tree .familypedia-gedcom-tree__mark {
-					display: inline-block;
-					text-align: center;
-					width: 1.4em;
-				}
-
-				.familypedia-gedcom-tree .familypedia-gedcom-tree__toggle {
-					color: inherit;
-					font-size: 1.1em;
-					line-height: 1;
-					text-decoration: none;
-					vertical-align: baseline;
-				}
-
-				.familypedia-gedcom-tree .familypedia-gedcom-tree__drop {
-					margin-left: 0.8em;
-				}
-			</style>
 			<script type="application/json" id="familypedia-gedcom-tree-data"><?php echo wp_json_encode( $tree_data, JSON_HEX_TAG | JSON_HEX_AMP ); ?></script>
-			<script>
-				(function () {
-					var review = document.querySelector('.familypedia-gedcom-review');
-					if (!review) {
-						return;
-					}
-
-					var body = review.querySelector('tbody');
-					var counter = review.querySelector('[data-familypedia-gedcom-count]');
-					var countTemplate = counter ? counter.textContent.trim() : '';
-					var rows = Array.prototype.slice.call(review.querySelectorAll('[data-familypedia-gedcom-row]'));
-					var view = 'connected';
-					var needle = '';
-					var sortKey = '';
-					var sortDescending = true;
-
-					var tree = JSON.parse(document.getElementById('familypedia-gedcom-tree-data').textContent);
-					var treeList = review.querySelector('[data-familypedia-gedcom-tree-list]');
-					var treeEmpty = review.querySelector('[data-familypedia-gedcom-tree-empty]');
-					var treeMore = review.querySelector('[data-familypedia-gedcom-tree-more]');
-					var moreTemplate = treeMore.textContent.trim();
-					var treeBox = review.querySelector('.familypedia-gedcom-tree');
-					var dropLabel = treeBox.getAttribute('data-familypedia-gedcom-drop-label');
-					var branchLabel = treeBox.getAttribute('data-familypedia-gedcom-branch-label');
-					var toggleLabel = treeBox.getAttribute('data-familypedia-gedcom-toggle-label');
-					// Everything starts folded, so picking a branch reads as the few
-					// lines it hangs from rather than a wall of names. Kept outside
-					// the drawing, which starts over on every tick, so a branch
-					// opened up stays open while the selection changes.
-					var opened = Object.create(null);
-					// Far past what anyone reads. Drawing every node of a whole-file
-					// selection would only make ticking a box slow.
-					var TREE_LIMIT = 400;
-
-					// Xrefs come out of the file, so they are never spliced into a
-					// selector: every lookup goes through these maps instead.
-					var boxes = Object.create(null);
-					rows.forEach(function (row) {
-						var box = boxOf(row);
-						if (box) {
-							boxes[box.value] = box;
-						}
-					});
-
-					var parentsOf = Object.create(null);
-					Object.keys(tree).forEach(function (xref) {
-						(tree[xref].children || []).forEach(function (child) {
-							parentsOf[child] = parentsOf[child] || [];
-							parentsOf[child].push(xref);
-						});
-					});
-
-					function boxOf(row) {
-						return row.querySelector('[data-familypedia-gedcom-person]');
-					}
-
-					function visible(row) {
-						return row.style.display !== 'none';
-					}
-
-					function apply() {
-						rows.forEach(function (row) {
-							var inView = view === 'all' || row.hasAttribute('data-connected');
-							var matches = !needle || row.getAttribute('data-name').indexOf(needle) !== -1;
-							row.style.display = inView && matches ? '' : 'none';
-						});
-					}
-
-					function refreshCount() {
-						if (!counter) {
-							return;
-						}
-						var selected = rows.filter(function (row) {
-							var box = boxOf(row);
-							return box && box.checked;
-						}).length;
-						// Replace the leading number in the rendered, translated string.
-						counter.textContent = countTemplate.replace(/\d+/, String(selected));
-					}
-
-					function refresh() {
-						refreshCount();
-						renderTree();
-					}
-
-					function person(xref) {
-						return tree[xref] || { name: xref };
-					}
-
-					function yearRange(entry) {
-						if (entry.birth && entry.death) {
-							return entry.birth + '–' + entry.death;
-						}
-						if (entry.birth) {
-							return '*' + entry.birth;
-						}
-						if (entry.death) {
-							return '†' + entry.death;
-						}
-
-						return '';
-					}
-
-					function nameOf(xref) {
-						var entry = person(xref);
-						var node = document.createElement('span');
-						node.setAttribute('data-familypedia-gedcom-node', xref);
-						node.appendChild(document.createTextNode(entry.name));
-
-						var years = yearRange(entry);
-						if (years) {
-							var dates = document.createElement('span');
-							dates.className = 'familypedia-gedcom-tree__years';
-							dates.textContent = ' (' + years + ')';
-							node.appendChild(dates);
-						}
-
-						return node;
-					}
-
-					function byBirth(a, b) {
-						// Undated people sort last rather than first, where a missing
-						// year would read as the oldest child of every household.
-						var left = person(a).birth || '9999';
-						var right = person(b).birth || '9999';
-						if (left === right) {
-							return person(a).name.localeCompare(person(b).name);
-						}
-
-						return left < right ? -1 : 1;
-					}
-
-					function householdChildren(xref, partners) {
-						var seen = Object.create(null);
-						var children = [];
-						[xref].concat(partners).forEach(function (parent) {
-							(person(parent).children || []).forEach(function (child) {
-								if (!seen[child]) {
-									seen[child] = true;
-									children.push(child);
-								}
-							});
-						});
-
-						return children;
-					}
-
-					/**
-					 * Who a line's drop button takes away: the branch hanging under
-					 * it, and only once nothing hangs there the couple on the line
-					 * itself. Taking the line along with its branch would carry off
-					 * people who married in, and with them whichever of their own
-					 * brothers and sisters were drawn beneath them.
-					 */
-					function dropTargets(item) {
-						var branch = item.querySelector('ul');
-
-						return (branch || item.querySelector('.familypedia-gedcom-tree__line'))
-							.querySelectorAll('[data-familypedia-gedcom-node]');
-					}
-
-					function toggleFor(xref, list) {
-						var toggle = document.createElement('button');
-						toggle.type = 'button';
-						toggle.className = 'button-link familypedia-gedcom-tree__mark familypedia-gedcom-tree__toggle';
-						toggle.setAttribute('data-familypedia-gedcom-toggle', xref);
-						toggle.setAttribute('aria-label', toggleLabel);
-						setOpen(toggle, list, !!opened[xref]);
-
-						return toggle;
-					}
-
-					function fold(toggle) {
-						var xref = toggle.getAttribute('data-familypedia-gedcom-toggle');
-						opened[xref] = !opened[xref];
-						setOpen(toggle, toggle.closest('li').querySelector('ul'), opened[xref]);
-					}
-
-					function setOpen(toggle, list, open) {
-						// The people below stay in the page while folded away: the
-						// count on the drop button, and what it drops, are the branch
-						// itself and not the part of it that happens to be in view.
-						list.hidden = !open;
-						toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
-						toggle.textContent = open ? '▼' : '►';
-					}
-
-					function renderPerson(xref, state) {
-						if (state.drawn[xref] || state.left < 1) {
-							return null;
-						}
-						state.drawn[xref] = true;
-						state.left -= 1;
-
-						var item = document.createElement('li');
-						var line = document.createElement('div');
-						line.className = 'familypedia-gedcom-tree__line';
-						line.appendChild(nameOf(xref));
-
-						// The people they married, on the same line: a couple splits
-						// their children between them, so drawing them apart would
-						// show every household twice with half a family each.
-						var partners = (person(xref).partners || []).filter(function (partner) {
-							return state.selected[partner] && !state.drawn[partner];
-						});
-						partners.forEach(function (partner) {
-							state.drawn[partner] = true;
-							state.left -= 1;
-							line.appendChild(document.createTextNode(' & '));
-							line.appendChild(nameOf(partner));
-						});
-
-						item.appendChild(line);
-
-						var children = householdChildren(xref, partners).filter(function (child) {
-							return state.selected[child] && !state.drawn[child];
-						}).sort(byBirth);
-
-						if (children.length) {
-							var list = document.createElement('ul');
-							children.forEach(function (child) {
-								var childItem = renderPerson(child, state);
-								if (childItem) {
-									list.appendChild(childItem);
-								}
-							});
-							if (list.childNodes.length) {
-								item.appendChild(list);
-								line.insertBefore(toggleFor(xref, list), line.firstChild);
-							}
-						}
-
-						// A line with nobody under it still gives up the width, so the
-						// names down a generation stay under one another.
-						if (!item.querySelector('ul')) {
-							var spacer = document.createElement('span');
-							spacer.className = 'familypedia-gedcom-tree__mark';
-							spacer.setAttribute('aria-hidden', 'true');
-							line.insertBefore(spacer, line.firstChild);
-						}
-
-						// Only now is it known whether anyone hangs off this line, which
-						// is what the button offers to take away.
-						var branch = item.querySelector('ul');
-						if (branch) {
-							line.classList.add('familypedia-gedcom-tree__line--branch');
-						}
-
-						var drop = document.createElement('button');
-						drop.type = 'button';
-						drop.className = 'button-link familypedia-gedcom-tree__drop';
-						drop.setAttribute('data-familypedia-gedcom-drop', '');
-						drop.textContent = (branch ? branchLabel : dropLabel)
-							+ ' (' + dropTargets(item).length + ')';
-						line.appendChild(drop);
-
-						return item;
-					}
-
-					function renderTree() {
-						var state = {
-							selected: Object.create(null),
-							drawn: Object.create(null),
-							left: TREE_LIMIT
-						};
-						var total = 0;
-						rows.forEach(function (row) {
-							var box = boxOf(row);
-							if (box && box.checked) {
-								state.selected[box.value] = true;
-								total += 1;
-							}
-						});
-
-						treeList.textContent = '';
-						treeEmpty.hidden = total > 0;
-						treeMore.hidden = true;
-						if (!total) {
-							return;
-						}
-
-						// Start from everyone whose parents are staying behind. Those
-						// are the tops of the branches that were picked, which is not
-						// where the file itself starts.
-						Object.keys(state.selected).filter(function (xref) {
-							return (parentsOf[xref] || []).every(function (parent) {
-								return !state.selected[parent];
-							});
-						}).sort(byBirth).forEach(function (xref) {
-							var item = renderPerson(xref, state);
-							if (item) {
-								treeList.appendChild(item);
-							}
-						});
-
-						// Whatever the branches did not reach still has to show up, or
-						// people would be imported that the tree never accounted for.
-						Object.keys(state.selected).forEach(function (xref) {
-							var item = renderPerson(xref, state);
-							if (item) {
-								treeList.appendChild(item);
-							}
-						});
-
-						var missing = total - Object.keys(state.drawn).length;
-						treeMore.hidden = missing < 1;
-						if (missing > 0) {
-							treeMore.textContent = moreTemplate.replace(/\d+/, String(missing));
-						}
-					}
-
-					function sort(key) {
-						if (sortKey === key) {
-							sortDescending = !sortDescending;
-						} else {
-							sortKey = key;
-							sortDescending = true;
-						}
-						var attribute = key === 'wiki' ? 'data-wiki' : 'data-subtree';
-						rows.sort(function (a, b) {
-							var difference = parseInt(a.getAttribute(attribute), 10) - parseInt(b.getAttribute(attribute), 10);
-							return sortDescending ? -difference : difference;
-						});
-						rows.forEach(function (row) {
-							body.appendChild(row);
-						});
-					}
-
-					review.addEventListener('click', function (event) {
-						var viewButton = event.target.closest('[data-familypedia-gedcom-view]');
-						if (viewButton) {
-							view = viewButton.getAttribute('data-familypedia-gedcom-view');
-							review.querySelectorAll('[data-familypedia-gedcom-view]').forEach(function (button) {
-								button.classList.toggle('button-primary', button === viewButton);
-							});
-							apply();
-							return;
-						}
-
-						var sortLink = event.target.closest('[data-familypedia-gedcom-sort]');
-						if (sortLink) {
-							event.preventDefault();
-							sort(sortLink.getAttribute('data-familypedia-gedcom-sort'));
-							return;
-						}
-
-						var selectAll = event.target.closest('[data-familypedia-gedcom-select-all]');
-						var clear = event.target.closest('[data-familypedia-gedcom-clear]');
-						if (selectAll || clear) {
-							rows.forEach(function (row) {
-								var box = boxOf(row);
-								if (!box) {
-									return;
-								}
-								// "Select everyone shown" respects the current view and filter.
-								if (clear) {
-									box.checked = false;
-								} else if (visible(row)) {
-									box.checked = true;
-								}
-							});
-							refresh();
-							return;
-						}
-
-						var descendants = event.target.closest('[data-familypedia-gedcom-descendants]');
-						if (descendants) {
-							descendants.getAttribute('data-familypedia-gedcom-descendants').split(',').forEach(function (xref) {
-								if (boxes[xref]) {
-									boxes[xref].checked = true;
-								}
-							});
-							refresh();
-							return;
-						}
-
-						// Folding changes nothing about the selection, so it moves the
-						// one branch rather than drawing the whole tree again.
-						var toggle = event.target.closest('[data-familypedia-gedcom-toggle]');
-						if (toggle) {
-							fold(toggle);
-							return;
-						}
-
-						// The names are a far bigger target than the arrow beside
-						// them, and fold the same branch. On a line with nobody
-						// underneath there is nothing to fold, so they do nothing.
-						var named = event.target.closest('[data-familypedia-gedcom-node]');
-						if (named) {
-							var owner = named.closest('li').querySelector('[data-familypedia-gedcom-toggle]');
-							if (owner) {
-								fold(owner);
-							}
-							return;
-						}
-
-						var drop = event.target.closest('[data-familypedia-gedcom-drop]');
-						if (drop) {
-							dropTargets(drop.closest('li')).forEach(function (node) {
-								var xref = node.getAttribute('data-familypedia-gedcom-node');
-								if (boxes[xref]) {
-									boxes[xref].checked = false;
-								}
-							});
-							refresh();
-							return;
-						}
-
-						if (event.target.closest('[data-familypedia-gedcom-person]')) {
-							refresh();
-						}
-					});
-
-					review.addEventListener('input', function (event) {
-						if (!event.target.closest('[data-familypedia-gedcom-filter]')) {
-							return;
-						}
-						needle = event.target.value.trim().toLowerCase();
-						apply();
-					});
-
-					apply();
-					refresh();
-				}());
-			</script>
 		</section>
 		<?php
+		wp_app_enqueue_script( 'familypedia-gedcom', Assets::url( 'gedcom.js' ), array(), Assets::version( 'gedcom.js' ), true );
 	}
 
 	public function export_download() {
-		if ( ! current_user_can( 'manage_options' ) ) {
-			wp_die( esc_html__( 'Sorry, you are not allowed to export GEDCOM data.', 'familypedia' ) );
+		if ( ! self::can_export() ) {
+			wp_die( esc_html__( 'Sorry, you are not allowed to export GEDCOM data.', 'familypedia' ), 403 );
 		}
-		check_admin_referer( 'familypedia_gedcom_export' );
+		check_admin_referer( self::EXPORT_ACTION );
 
 		$filename = sanitize_file_name( wp_parse_url( home_url(), PHP_URL_HOST ) . '-familypedia-' . current_time( 'Ymd-His' ) . '.ged' );
 
@@ -832,12 +340,10 @@ class Gedcom {
 	}
 
 	public function import_upload() {
-		if ( ! current_user_can( 'import' ) ) {
-			wp_die( esc_html__( 'Sorry, you are not allowed to import GEDCOM data.', 'familypedia' ) );
+		if ( ! self::can_import() ) {
+			wp_die( esc_html__( 'Sorry, you are not allowed to import GEDCOM data.', 'familypedia' ), 403 );
 		}
-		check_admin_referer( 'familypedia_gedcom_import' );
-
-		$redirect = admin_url( 'admin.php?import=familypedia-gedcom' );
+		check_admin_referer( self::IMPORT_ACTION );
 
 		// Report why the upload did not arrive, rather than asking for a file that was chosen.
 		$upload_error = isset( $_FILES['gedcom']['error'] ) ? (int) $_FILES['gedcom']['error'] : UPLOAD_ERR_NO_FILE;
@@ -846,25 +352,21 @@ class Gedcom {
 			if ( UPLOAD_ERR_NO_FILE === $upload_error ) {
 				$error = 'missing_file';
 			}
-			wp_safe_redirect( add_query_arg( 'familypedia_error', $error, $redirect ) );
-			exit;
+			$this->fail( $error );
 		}
 
 		if ( empty( $_FILES['gedcom']['tmp_name'] ) || ! is_uploaded_file( $_FILES['gedcom']['tmp_name'] ) ) {
-			wp_safe_redirect( add_query_arg( 'familypedia_error', 'missing_file', $redirect ) );
-			exit;
+			$this->fail( 'missing_file' );
 		}
 
 		$contents = file_get_contents( $_FILES['gedcom']['tmp_name'] );
 		if ( false === $contents || '' === trim( $contents ) ) {
-			wp_safe_redirect( add_query_arg( 'familypedia_error', 'empty_file', $redirect ) );
-			exit;
+			$this->fail( 'empty_file' );
 		}
 
 		$records = $this->parse_records( $contents );
 		if ( empty( $records['INDI'] ) ) {
-			wp_safe_redirect( add_query_arg( 'familypedia_error', 'no_individuals', $redirect ) );
-			exit;
+			$this->fail( 'no_individuals' );
 		}
 
 		// The token travels back through sanitize_key(), which lowercases it, so
@@ -873,11 +375,22 @@ class Gedcom {
 		$token = strtolower( wp_generate_password( 32, false, false ) );
 		if ( ! $this->store_import_file( $token, $contents ) ) {
 			// Say so here, rather than letting the review screen report the file as expired.
-			wp_safe_redirect( add_query_arg( 'familypedia_error', 'store_failed', $redirect ) );
-			exit;
+			$this->fail( 'store_failed' );
 		}
 
-		wp_safe_redirect( add_query_arg( 'familypedia_review', $token, $redirect ) );
+		wp_safe_redirect( add_query_arg( 'familypedia_review', $token, self::get_page_url() ) );
+		exit;
+	}
+
+	/**
+	 * Leave the reason on the page the form came from and go back to it.
+	 *
+	 * @param string $error A key of error_message().
+	 * @param string $token The review being worked on, when there is one.
+	 */
+	private function fail( $error, $token = '' ) {
+		Editor::set_notice( $this->error_message( $error ), 'error' );
+		wp_safe_redirect( $token ? add_query_arg( 'familypedia_review', $token, self::get_page_url() ) : self::get_page_url() );
 		exit;
 	}
 
@@ -934,36 +447,36 @@ class Gedcom {
 	}
 
 	public function import_selected() {
-		if ( ! current_user_can( 'import' ) ) {
-			wp_die( esc_html__( 'Sorry, you are not allowed to import GEDCOM data.', 'familypedia' ) );
+		if ( ! self::can_import() ) {
+			wp_die( esc_html__( 'Sorry, you are not allowed to import GEDCOM data.', 'familypedia' ), 403 );
 		}
-		check_admin_referer( 'familypedia_gedcom_import_selected' );
+		check_admin_referer( self::SELECT_ACTION );
 
-		$redirect = admin_url( 'admin.php?import=familypedia-gedcom' );
 		$token    = isset( $_POST['familypedia_review'] ) ? sanitize_key( wp_unslash( $_POST['familypedia_review'] ) ) : '';
 		$contents = $token ? $this->get_import_file( $token ) : false;
 		if ( false === $contents ) {
-			wp_safe_redirect( add_query_arg( 'familypedia_error', 'review_expired', $redirect ) );
-			exit;
+			$this->fail( 'review_expired' );
 		}
 
 		$selected = isset( $_POST['familypedia_people'] ) && is_array( $_POST['familypedia_people'] ) ? array_map( 'sanitize_text_field', wp_unslash( $_POST['familypedia_people'] ) ) : array();
 		$result   = $this->import_string( $contents, $selected );
 		if ( is_wp_error( $result ) ) {
-			wp_safe_redirect( add_query_arg( 'familypedia_error', $result->get_error_code(), add_query_arg( 'familypedia_review', $token, $redirect ) ) );
+			// The file is kept, so that the selection can be corrected and sent again.
+			Editor::set_notice( $result->get_error_message(), 'error' );
+			wp_safe_redirect( add_query_arg( 'familypedia_review', $token, self::get_page_url() ) );
 			exit;
 		}
 
 		$this->delete_import_file( $token );
-		wp_safe_redirect(
-			add_query_arg(
-				array(
-					'familypedia_imported' => $result['created'],
-					'familypedia_updated'  => $result['updated'],
-				),
-				$redirect
+		Editor::set_notice(
+			sprintf(
+				// translators: %1$d is a number of people created, %2$d a number updated.
+				__( 'GEDCOM import complete. Created %1$d people and updated %2$d people.', 'familypedia' ),
+				$result['created'],
+				$result['updated']
 			)
 		);
+		wp_safe_redirect( self::get_page_url() );
 		exit;
 	}
 

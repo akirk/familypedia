@@ -70,6 +70,7 @@ class App extends BaseApp {
 		$this->app->route( 'new', 'edit.php' );
 		$this->app->route( 'tree', 'tree.php' );
 		$this->app->route( 'tree/(?P<person>[^/]+)', 'tree.php', array( 'person' ) );
+		$this->app->route( Gedcom::URL_PATH, 'import-export.php' );
 
 		if ( Calendar::is_calendar_enabled() ) {
 			$this->app->route( 'calendar', 'calendar.php' );
@@ -105,6 +106,17 @@ class App extends BaseApp {
 
 		if ( Editor::can_create() ) {
 			$this->app->add_menu_item( 'new', __( 'Add Person', 'familypedia' ), home_url( '/' . self::URL_PATH . '/new/' ) );
+		}
+
+		// Everything the app can be reached by is one menu, the one WpApp
+		// builds: a second entry of the plugin's own would draw a second
+		// Familypedia menu beside it, holding half the pages each.
+		if ( Gedcom::can_use() ) {
+			$this->app->add_menu_item( 'import-export', __( 'Import / Export', 'familypedia' ), Gedcom::get_page_url() );
+		}
+
+		if ( current_user_can( 'manage_options' ) ) {
+			$this->app->add_menu_item( 'settings', __( 'Settings', 'familypedia' ), admin_url( 'options-general.php?page=' . Settings::PAGE ) );
 		}
 	}
 

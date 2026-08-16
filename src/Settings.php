@@ -9,7 +9,6 @@ class Settings {
 	public function __construct() {
 		add_action( 'admin_menu', array( $this, 'admin_menu' ) );
 		add_action( 'admin_init', array( $this, 'admin_init' ) );
-		add_action( 'admin_bar_menu', array( $this, 'admin_bar_menu' ), 80 );
 	}
 
 	public function admin_menu() {
@@ -88,21 +87,6 @@ class Settings {
 		$settings = self::get_app_pages_settings();
 
 		return ! empty( $settings[ $page ] );
-	}
-
-	public function admin_bar_menu( \WP_Admin_Bar $wp_admin_bar ) {
-		if ( ! current_user_can( 'manage_options' ) ) {
-			return;
-		}
-
-		$wp_admin_bar->add_node(
-			array(
-				'id'     => 'familypedia-settings',
-				'parent' => Calendar::MENU_ID,
-				'title'  => __( 'Settings', 'familypedia' ),
-				'href'   => admin_url( 'options-general.php?page=' . self::PAGE ),
-			)
-		);
 	}
 
 	public function render_page() {
