@@ -417,6 +417,33 @@ body.familypedia ::placeholder {
 	margin: 0;
 }
 
+.familypedia-gedcom-progress {
+	background: var(--familypedia-surface);
+	border: 1px solid var(--familypedia-border);
+	border-left: 4px solid var(--familypedia-primary);
+	border-radius: var(--familypedia-radius);
+	margin: 0 0 1rem;
+	padding: 0.85rem 1rem;
+}
+
+.familypedia-gedcom-progress--failed {
+	border-left-color: var(--familypedia-error);
+}
+
+.familypedia-gedcom-progress progress {
+	display: block;
+	height: 0.6rem;
+	width: 100%;
+}
+
+.familypedia-gedcom-progress--failed progress {
+	display: none;
+}
+
+.familypedia-gedcom-progress__text {
+	margin: 0.5rem 0 0;
+}
+
 .familypedia-gedcom-review__views {
 	align-items: center;
 	display: flex;

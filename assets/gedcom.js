@@ -26,9 +26,11 @@
 	var treeMore = review.querySelector('[data-familypedia-gedcom-tree-more]');
 	var moreTemplate = treeMore.textContent.trim();
 	var treeBox = review.querySelector('.familypedia-gedcom-tree');
-	var dropLabel = treeBox.getAttribute('data-familypedia-gedcom-drop-label');
-	var branchLabel = treeBox.getAttribute('data-familypedia-gedcom-branch-label');
-	var toggleLabel = treeBox.getAttribute('data-familypedia-gedcom-toggle-label');
+	var settings = window.familypediaGedcom || {};
+	var l10n = settings.l10n || {};
+	var dropLabel = l10n.drop;
+	var branchLabel = l10n.dropBranch;
+	var toggleLabel = l10n.toggle;
 	// Everything starts folded, so picking a branch reads as the few
 	// lines it hangs from rather than a wall of names. Kept outside
 	// the drawing, which starts over on every tick, so a branch
@@ -435,6 +437,126 @@
 			event.preventDefault();
 		}
 	});
+
+	/*
+	 * Importing, a batch at a time.
+	 *
+	 * A whole family is more work than one request should carry, and a form post
+	 * that sits there for a minute looks the same as one that has died. The same
+	 * file is walked in pieces instead, and each piece says how far it has got.
+	 * Without fetch the form posts itself, which still works.
+	 */
+	var form = review.querySelector('[data-familypedia-gedcom-form]');
+	var progress = review.querySelector('[data-familypedia-gedcom-progress]');
+	var bar = progress ? progress.querySelector('[data-familypedia-gedcom-progress-bar]') : null;
+	var text = progress ? progress.querySelector('[data-familypedia-gedcom-progress-text]') : null;
+	// event.submitter is not everywhere yet, and which button was pressed is the
+	// difference between the whole file and a selection.
+	var pressed = null;
+
+	if (form && progress && settings.endpoint && window.fetch) {
+		form.addEventListener('click', function (event) {
+			var button = event.target.closest('button[type="submit"]');
+			if (button) {
+				pressed = button;
+			}
+		});
+
+		form.addEventListener('submit', function (event) {
+			var submitter = event.submitter || pressed;
+			var all = !!(submitter && submitter.name === 'familypedia_import_all');
+			var selected = all ? null : Array.prototype.slice
+				.call(form.querySelectorAll('[data-familypedia-gedcom-person]:checked'))
+				.map(function (box) {
+					return box.value;
+				});
+
+			// Nothing ticked is a mistake the server already words well, and
+			// letting the form post keeps that wording in one place.
+			if (selected && !selected.length) {
+				return;
+			}
+
+			event.preventDefault();
+			start(selected, treeWanted());
+		});
+	}
+
+	function treeWanted() {
+		var box = form.querySelector('[name="familypedia_front_page_tree"]');
+
+		return !!(box && box.checked);
+	}
+
+	function send(url, payload) {
+		return fetch(url, {
+			method: 'POST',
+			credentials: 'same-origin',
+			headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': settings.nonce },
+			body: JSON.stringify(payload || {})
+		}).then(function (response) {
+			return response.json().then(function (data) {
+				if (!response.ok) {
+					throw new Error(data && data.message ? data.message : response.statusText);
+				}
+
+				return data;
+			});
+		});
+	}
+
+	function start(selected, tree) {
+		progress.hidden = false;
+		progress.classList.remove('familypedia-gedcom-progress--failed');
+		working(true);
+		say(l10n.starting, 0);
+
+		send(settings.endpoint, { token: settings.token, selected: selected, front_page_tree: tree })
+			.then(function (started) {
+				return step(started.run);
+			})
+			.catch(failed);
+	}
+
+	function step(run) {
+		return send(settings.endpoint + '/' + run).then(function (state) {
+			if (state.done) {
+				say(state.message, 100);
+				window.location = state.redirect;
+				return;
+			}
+
+			say(
+				(state.stage === 'families' ? l10n.families : l10n.people)
+					.replace('%1$s', state.position)
+					.replace('%2$s', state.total),
+				state.total ? Math.round((state.position / state.total) * 100) : 0
+			);
+
+			return step(run);
+		});
+	}
+
+	function say(message, percent) {
+		text.textContent = message;
+		bar.value = percent;
+	}
+
+	function failed(error) {
+		say(l10n.failed.replace('%s', error.message), 0);
+		progress.classList.add('familypedia-gedcom-progress--failed');
+		working(false);
+	}
+
+	/**
+	 * While a run is going, the buttons that would start a second one are out of
+	 * reach: the file is walked by cursor, and two walks would import it twice.
+	 */
+	function working(busy) {
+		Array.prototype.slice.call(form.querySelectorAll('button, input')).forEach(function (control) {
+			control.disabled = busy;
+		});
+	}
 
 	apply();
 	refresh();

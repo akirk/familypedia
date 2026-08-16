@@ -8,6 +8,15 @@ class Gedcom {
 	const SELECT_ACTION = 'familypedia_gedcom_import_selected';
 	const XREF_META = '_familypedia_gedcom_xref';
 	const IMPORT_TRANSIENT_PREFIX = 'familypedia_gedcom_import_';
+	const RUN_TRANSIENT_PREFIX = 'familypedia_gedcom_run_';
+
+	/**
+	 * How much of the file one request takes on. Small enough that no single
+	 * request is at risk of the timeout a whole family would run into, large
+	 * enough that the file is not re-read hundreds of times on the way through.
+	 */
+	const BATCH_PEOPLE = 25;
+	const BATCH_FAMILIES = 50;
 
 	/**
 	 * The instance Main built, so that the app template renders the page
@@ -23,6 +32,235 @@ class Gedcom {
 		}
 
 		add_action( 'wp_loaded', array( $this, 'maybe_handle' ) );
+		add_action( 'rest_api_init', array( $this, 'register_rest_routes' ) );
+	}
+
+	/**
+	 * The import, a batch per request.
+	 *
+	 * A family of any size takes longer than one page load should, and a form
+	 * post that sits there for a minute is indistinguishable from one that has
+	 * died. These walk the same file in pieces and say how far they have got. The
+	 * form post below still works on its own, for whoever has no JavaScript.
+	 */
+	public function register_rest_routes() {
+		register_rest_route(
+			'familypedia/v1',
+			'/import',
+			array(
+				'methods'             => 'POST',
+				'permission_callback' => array( __CLASS__, 'can_import' ),
+				'callback'            => array( $this, 'rest_import_start' ),
+			)
+		);
+
+		register_rest_route(
+			'familypedia/v1',
+			'/import/(?P<run>[a-z0-9]{32})',
+			array(
+				'methods'             => 'POST',
+				'permission_callback' => array( __CLASS__, 'can_import' ),
+				'callback'            => array( $this, 'rest_import_step' ),
+			)
+		);
+	}
+
+	/**
+	 * Work out what this import will do, and remember it under a run id.
+	 */
+	public function rest_import_start( $request ) {
+		$token    = sanitize_key( (string) $request->get_param( 'token' ) );
+		$contents = $token ? $this->get_import_file( $token ) : false;
+		if ( false === $contents ) {
+			return new \WP_Error( 'familypedia_review_expired', $this->error_message( 'review_expired' ), array( 'status' => 400 ) );
+		}
+
+		$records = $this->parse_records( $contents );
+		if ( empty( $records['INDI'] ) ) {
+			return new \WP_Error( 'familypedia_no_individuals', $this->error_message( 'no_individuals' ), array( 'status' => 400 ) );
+		}
+
+		$xrefs    = array_keys( $records['INDI'] );
+		$selected = $request->get_param( 'selected' );
+
+		// Null is everyone, which is what the button above the table asks for.
+		if ( is_array( $selected ) ) {
+			$wanted = array_fill_keys( array_map( 'sanitize_text_field', $selected ), true );
+			$xrefs  = array_values(
+				array_filter(
+					$xrefs,
+					function ( $xref ) use ( $wanted ) {
+						return isset( $wanted[ $xref ] );
+					}
+				)
+			);
+
+			if ( empty( $xrefs ) ) {
+				return new \WP_Error( 'familypedia_no_selection', $this->error_message( 'no_selection' ), array( 'status' => 400 ) );
+			}
+		}
+
+		$run   = strtolower( wp_generate_password( 32, false, false ) );
+		$state = array(
+			'token'    => $token,
+			'xrefs'    => $xrefs,
+			'families' => empty( $records['FAM'] ) ? array() : array_keys( $records['FAM'] ),
+			'stage'    => 'people',
+			'cursor'   => 0,
+			// Built once, as the form post builds it once, so that a page written
+			// by this import is not matched against by a later entry.
+			'index'    => $this->existing_page_index(),
+			'id_map'   => array(),
+			'claimed'  => array(),
+			'created'  => 0,
+			'updated'  => 0,
+			'tree'     => (bool) $request->get_param( 'front_page_tree' ),
+		);
+
+		if ( ! set_transient( self::RUN_TRANSIENT_PREFIX . $run, $state, HOUR_IN_SECONDS ) ) {
+			return new \WP_Error( 'familypedia_run_failed', $this->error_message( 'store_failed' ), array( 'status' => 500 ) );
+		}
+
+		return array(
+			'run'      => $run,
+			'people'   => count( $state['xrefs'] ),
+			'families' => count( $state['families'] ),
+		);
+	}
+
+	/**
+	 * Carry one run a batch further.
+	 */
+	public function rest_import_step( $request ) {
+		$run   = sanitize_key( (string) $request->get_param( 'run' ) );
+		$state = get_transient( self::RUN_TRANSIENT_PREFIX . $run );
+		if ( ! is_array( $state ) ) {
+			return new \WP_Error( 'familypedia_run_expired', __( 'The import stopped before it finished. Please upload the file again.', 'familypedia' ), array( 'status' => 400 ) );
+		}
+
+		$contents = $this->get_import_file( $state['token'] );
+		if ( false === $contents ) {
+			return new \WP_Error( 'familypedia_review_expired', $this->error_message( 'review_expired' ), array( 'status' => 400 ) );
+		}
+
+		$records = $this->parse_records( $contents );
+
+		if ( 'families' === $state['stage'] ) {
+			$state = $this->import_families_batch( $state, $records );
+		} else {
+			$state = $this->import_people_batch( $state, $records );
+		}
+
+		if ( is_wp_error( $state ) ) {
+			// The run and the file are kept, so that it can be sent again.
+			return $state;
+		}
+
+		if ( 'done' === $state['stage'] ) {
+			return $this->finish_run( $run, $state );
+		}
+
+		set_transient( self::RUN_TRANSIENT_PREFIX . $run, $state, HOUR_IN_SECONDS );
+
+		return $this->run_progress( $state );
+	}
+
+	private function import_people_batch( $state, $records ) {
+		$total = count( $state['xrefs'] );
+		$end   = min( $total, $state['cursor'] + self::BATCH_PEOPLE );
+
+		for ( ; $state['cursor'] < $end; $state['cursor']++ ) {
+			$xref = $state['xrefs'][ $state['cursor'] ];
+			if ( ! isset( $records['INDI'][ $xref ] ) ) {
+				continue;
+			}
+
+			$person = $this->import_person( $xref, $records['INDI'][ $xref ], $state['index'], $state['claimed'] );
+			if ( is_wp_error( $person ) ) {
+				return $person;
+			}
+
+			$state['id_map'][ $xref ] = $person['id'];
+
+			if ( $person['existed'] ) {
+				++$state['updated'];
+			} else {
+				++$state['created'];
+			}
+		}
+
+		if ( $state['cursor'] >= $total ) {
+			$state['stage']  = $state['families'] ? 'families' : 'done';
+			$state['cursor'] = 0;
+		}
+
+		return $state;
+	}
+
+	/**
+	 * Families are linked once everybody is in, and can be taken a slice at a
+	 * time: each slice merges into what the last one wrote rather than replacing
+	 * it, so the result is the same as doing them all at once.
+	 */
+	private function import_families_batch( $state, $records ) {
+		$all   = isset( $records['FAM'] ) ? $records['FAM'] : array();
+		$total = count( $state['families'] );
+		$end   = min( $total, $state['cursor'] + self::BATCH_FAMILIES );
+		$slice = array();
+
+		for ( ; $state['cursor'] < $end; $state['cursor']++ ) {
+			$xref = $state['families'][ $state['cursor'] ];
+			if ( isset( $all[ $xref ] ) ) {
+				$slice[ $xref ] = $all[ $xref ];
+			}
+		}
+
+		$this->import_family_links( $slice, $state['id_map'] );
+
+		if ( $state['cursor'] >= $total ) {
+			$state['stage'] = 'done';
+		}
+
+		return $state;
+	}
+
+	private function finish_run( $run, $state ) {
+		Main::flush_family_data_cache();
+		$this->delete_import_file( $state['token'] );
+		delete_transient( self::RUN_TRANSIENT_PREFIX . $run );
+
+		$message = sprintf(
+			// translators: %1$d is a number of people created, %2$d a number updated.
+			__( 'GEDCOM import complete. Created %1$d people and updated %2$d people.', 'familypedia' ),
+			$state['created'],
+			$state['updated']
+		);
+
+		if ( ! empty( $state['tree'] ) && Front_Page::add_tree( Tree::suggest_root() ) ) {
+			$message .= ' ' . __( 'The biggest branch is now on the front page.', 'familypedia' );
+		}
+
+		Editor::set_notice( $message );
+
+		return array(
+			'done'     => true,
+			'stage'    => 'done',
+			'created'  => $state['created'],
+			'updated'  => $state['updated'],
+			'message'  => $message,
+			'redirect' => self::get_page_url(),
+		);
+	}
+
+	private function run_progress( $state ) {
+		return array(
+			'done'     => false,
+			'stage'    => $state['stage'],
+			'position' => (int) $state['cursor'],
+			'total'    => 'families' === $state['stage'] ? count( $state['families'] ) : count( $state['xrefs'] ),
+			'created'  => $state['created'],
+			'updated'  => $state['updated'],
+		);
 	}
 
 	public static function get_page_url() {
@@ -180,7 +418,7 @@ class Gedcom {
 				);
 				?>
 			</p>
-			<form method="post" action="<?php echo esc_url( self::get_page_url() ); ?>">
+			<form method="post" action="<?php echo esc_url( self::get_page_url() ); ?>" data-familypedia-gedcom-form>
 				<input type="hidden" name="familypedia_action" value="<?php echo esc_attr( self::SELECT_ACTION ); ?>" />
 				<input type="hidden" name="familypedia_review" value="<?php echo esc_attr( $token ); ?>" />
 				<?php wp_nonce_field( self::SELECT_ACTION ); ?>
@@ -216,6 +454,11 @@ class Gedcom {
 						</label>
 					</p>
 				<?php endif; ?>
+
+				<div class="familypedia-gedcom-progress" data-familypedia-gedcom-progress hidden>
+					<progress data-familypedia-gedcom-progress-bar max="100" value="0"></progress>
+					<p class="familypedia-gedcom-progress__text" role="status" data-familypedia-gedcom-progress-text></p>
+				</div>
 
 				<p class="familypedia-gedcom-review__views">
 					<button type="button" class="familypedia-button familypedia-button--primary" data-familypedia-gedcom-view="connected">
@@ -312,12 +555,7 @@ class Gedcom {
 						<?php endforeach; ?>
 					</tbody>
 				</table>
-				<div
-					class="familypedia-gedcom-tree"
-					data-familypedia-gedcom-drop-label="<?php esc_attr_e( 'Drop', 'familypedia' ); ?>"
-					data-familypedia-gedcom-branch-label="<?php esc_attr_e( 'Drop branch', 'familypedia' ); ?>"
-					data-familypedia-gedcom-toggle-label="<?php esc_attr_e( 'Show or hide this branch', 'familypedia' ); ?>"
-				>
+				<div class="familypedia-gedcom-tree">
 					<h3><?php esc_html_e( 'Selected people', 'familypedia' ); ?></h3>
 					<p class="familypedia-field__hint" data-familypedia-gedcom-tree-empty><?php esc_html_e( 'Tick people above and the branches you picked are drawn here, so you can drop the ones you did not mean to take.', 'familypedia' ); ?></p>
 					<ul class="familypedia-gedcom-tree__list" data-familypedia-gedcom-tree-list></ul>
@@ -354,6 +592,37 @@ class Gedcom {
 			<script type="application/json" id="familypedia-gedcom-tree-data"><?php echo wp_json_encode( $tree_data, JSON_HEX_TAG | JSON_HEX_AMP ); ?></script>
 		</section>
 		<?php
+		/*
+		 * What wp_localize_script() would print, printed the way app pages take
+		 * scripts: wp_app_enqueue_script() writes its own tag rather than going
+		 * through WP_Scripts, so there is no registered handle to attach to. The
+		 * inline script is queued first, so it lands above the file that reads it.
+		 */
+		wp_app_add_inline_script(
+			'familypedia-gedcom',
+			'var familypediaGedcom = ' . wp_json_encode(
+				array(
+					'endpoint' => rest_url( 'familypedia/v1/import' ),
+					'nonce'    => wp_create_nonce( 'wp_rest' ),
+					'token'    => $token,
+					'l10n'     => array(
+						'starting'   => __( 'Reading the file…', 'familypedia' ),
+						// translators: %1$s is a number of people done, %2$s the total.
+						'people'     => __( 'Importing people: %1$s of %2$s', 'familypedia' ),
+						// translators: %1$s is a number of family records done, %2$s the total.
+						'families'   => __( 'Linking families: %1$s of %2$s', 'familypedia' ),
+						// translators: %s is an error message.
+						'failed'     => __( 'The import stopped: %s', 'familypedia' ),
+						'drop'       => __( 'Drop', 'familypedia' ),
+						'dropBranch' => __( 'Drop branch', 'familypedia' ),
+						'toggle'     => __( 'Show or hide this branch', 'familypedia' ),
+					),
+				),
+				JSON_HEX_TAG | JSON_HEX_AMP
+			) . ';',
+			true
+		);
+
 		wp_app_enqueue_script( 'familypedia-gedcom', Assets::url( 'gedcom.js' ), array(), Assets::version( 'gedcom.js' ), true );
 	}
 
@@ -593,36 +862,18 @@ class Gedcom {
 		$claimed = array();
 
 		foreach ( $records['INDI'] as $xref => $record ) {
-			$title   = $this->gedcom_name_to_title( $this->first_value( $record, 'NAME' ) );
-			$post_id = $this->find_person_post( $xref, $title, $index, $claimed, $this->gedcom_birth_year( $record ) );
-			$data    = array(
-				'post_type'    => Person::POST_TYPE,
-				'post_status'  => 'publish',
-				'post_title'   => $title ? $title : $xref,
-				'post_content' => '',
-			);
-
-			if ( $post_id ) {
-				$data['ID'] = $post_id;
-				unset( $data['post_content'] );
-				$result = wp_update_post( wp_slash( $data ), true );
-				if ( is_wp_error( $result ) ) {
-					return $result;
-				}
-				++$updated;
-			} else {
-				$result = wp_insert_post( wp_slash( $data ), true );
-				if ( is_wp_error( $result ) ) {
-					return $result;
-				}
-				$post_id = $result;
-				++$created;
+			$person = $this->import_person( $xref, $record, $index, $claimed );
+			if ( is_wp_error( $person ) ) {
+				return $person;
 			}
 
-			$id_map[ $xref ]   = $post_id;
-			$claimed[ $post_id ] = true;
-			update_post_meta( $post_id, self::XREF_META, $xref );
-			$this->import_individual_fields( $post_id, $record );
+			$id_map[ $xref ] = $person['id'];
+
+			if ( $person['existed'] ) {
+				++$updated;
+			} else {
+				++$created;
+			}
 		}
 
 		$this->import_family_links( isset( $records['FAM'] ) ? $records['FAM'] : array(), $id_map );
@@ -1134,6 +1385,59 @@ class Gedcom {
 		if ( $death['place'] ) {
 			$this->update_field( 'death_place', $death['place'], $post_id );
 		}
+	}
+
+	/**
+	 * Create or update one person from their GEDCOM record.
+	 *
+	 * Both ways of importing go through here: the plain form post walks the file
+	 * in one go, the app walks it a batch at a time, and neither wants its own
+	 * idea of what importing a person means.
+	 *
+	 * @param string $xref    The person's GEDCOM xref.
+	 * @param array  $record  Their parsed record.
+	 * @param array  $index   Index of the people already on the wiki, as it stood
+	 *                        when the import started. Not updated as people are
+	 *                        created: a page written by this import is not a page
+	 *                        a later entry should be matched against.
+	 * @param array  $claimed Post IDs this import has already used, by reference.
+	 * @return array|\WP_Error The post ID and whether it was already there.
+	 */
+	private function import_person( $xref, $record, $index, &$claimed ) {
+		$title   = $this->gedcom_name_to_title( $this->first_value( $record, 'NAME' ) );
+		$post_id = $this->find_person_post( $xref, $title, $index, $claimed, $this->gedcom_birth_year( $record ) );
+		$existed = (bool) $post_id;
+		$data    = array(
+			'post_type'    => Person::POST_TYPE,
+			'post_status'  => 'publish',
+			'post_title'   => $title ? $title : $xref,
+			'post_content' => '',
+		);
+
+		if ( $existed ) {
+			$data['ID'] = $post_id;
+			unset( $data['post_content'] );
+			$result = wp_update_post( wp_slash( $data ), true );
+		} else {
+			$result = wp_insert_post( wp_slash( $data ), true );
+		}
+
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+
+		if ( ! $existed ) {
+			$post_id = $result;
+		}
+
+		$claimed[ $post_id ] = true;
+		update_post_meta( $post_id, self::XREF_META, $xref );
+		$this->import_individual_fields( $post_id, $record );
+
+		return array(
+			'id'      => (int) $post_id,
+			'existed' => $existed,
+		);
 	}
 
 	private function import_family_links( $families, $id_map ) {

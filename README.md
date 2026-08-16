@@ -95,6 +95,12 @@ family tree. It is ticked to begin with on a wiki that has nobody on it yet,
 where the import is the whole family, and left alone once the front page already
 draws a tree.
 
+Importing runs a batch of the file per request and says how far it has got —
+people first, then the family records that link them — because a whole family is
+more than one page load should carry, and a form post that sits there for a
+minute looks the same as one that has died. Without JavaScript the form posts
+itself and does the lot in one go, as it did before.
+
 Existing people are matched by a previously stored GEDCOM xref first, then by
 name — and
 where a birth year is known on both sides it has to agree, so one person is not
