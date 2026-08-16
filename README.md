@@ -73,8 +73,8 @@ marked green.
 
 ## GEDCOM import and export
 
-Administrators can import GEDCOM files from *Tools → Import* and export them
-from *Tools → Familypedia*. An upload opens a review step where you can pick
+Administrators import and export GEDCOM files on the app's own
+*Import / Export* page. An upload opens a review step where you can pick
 individual entries or whole descendant subtrees before importing. Existing
 people are matched by a previously stored GEDCOM xref first, then by name — and
 where a birth year is known on both sides it has to agree, so one person is not

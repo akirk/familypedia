@@ -14,7 +14,6 @@ namespace Familypedia;
 
 class Calendar {
 	const MONTH_ROUTE_VAR = 'calendar_month';
-	const MENU_ID = 'familypedia';
 	const VIEW_CALENDAR = 'calendar';
 	const VIEW_BIRTHDAYS = 'birthdays';
 
@@ -46,7 +45,6 @@ class Calendar {
 
 		add_action( 'init', array( $this, 'register_blocks' ) );
 		add_action( 'enqueue_block_editor_assets', array( $this, 'enqueue_block_editor_assets' ) );
-		add_action( 'admin_bar_menu', array( $this, 'admin_bar_menu' ), 79 );
 	}
 
 	public function register_blocks() {
@@ -116,42 +114,6 @@ class Calendar {
 		$cache_key = self::get_dates_cache_key();
 		wp_cache_delete( $cache_key, 'familypedia' );
 		delete_transient( $cache_key );
-	}
-
-	public function admin_bar_menu( \WP_Admin_Bar $wp_admin_bar ) {
-		if ( ! current_user_can( Private_Site::MINIMUM_CAPABILITY ) ) {
-			return;
-		}
-
-		$wp_admin_bar->add_node(
-			array(
-				'id'    => self::MENU_ID,
-				'title' => __( 'Familypedia', 'familypedia' ),
-				'href'  => home_url( '/' . App::URL_PATH . '/' ),
-			)
-		);
-
-		if ( self::is_calendar_enabled() ) {
-			$wp_admin_bar->add_node(
-				array(
-					'id'     => 'familypedia-calendar',
-					'parent' => self::MENU_ID,
-					'title'  => __( 'Calendar', 'familypedia' ),
-					'href'   => self::get_calendar_url(),
-				)
-			);
-		}
-
-		if ( self::is_birthdays_enabled() ) {
-			$wp_admin_bar->add_node(
-				array(
-					'id'     => 'familypedia-birthdays',
-					'parent' => self::MENU_ID,
-					'title'  => __( 'Birthdays', 'familypedia' ),
-					'href'   => self::get_birthdays_url(),
-				)
-			);
-		}
 	}
 
 	public static function get_title( $view ) {
