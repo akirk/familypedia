@@ -399,6 +399,24 @@ body.familypedia ::placeholder {
 	margin: 0 0 2rem;
 }
 
+/* Taking the whole file is the common case, so it reads as the main action. */
+.familypedia-gedcom-review__actions {
+	align-items: center;
+	background: var(--familypedia-surface);
+	border: 1px solid var(--familypedia-border);
+	border-radius: var(--familypedia-radius);
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.75rem;
+	margin: 0 0 1rem;
+	padding: 0.85rem 1rem;
+}
+
+.familypedia-gedcom-review__actions .familypedia-field__hint {
+	display: inline;
+	margin: 0;
+}
+
 .familypedia-gedcom-review__views {
 	align-items: center;
 	display: flex;

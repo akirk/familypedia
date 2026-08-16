@@ -19,6 +19,15 @@ class Tree {
 	 */
 	private static $expanded = array();
 
+	/**
+	 * The index for this request, so it is built once. Held on the class rather
+	 * than inside get_people() so that flush_cache() can drop it: an import
+	 * changes the family and then asks about it in the same request.
+	 *
+	 * @var array|null
+	 */
+	private static $people;
+
 	public function __construct() {
 		add_action( 'init', array( $this, 'register_block' ) );
 		add_action( 'rest_api_init', array( $this, 'register_rest_routes' ) );
@@ -369,10 +378,8 @@ class Tree {
 	 * Index of every person on this site, with relationships made symmetric.
 	 */
 	public static function get_people() {
-		static $people;
-
-		if ( isset( $people ) ) {
-			return $people;
+		if ( isset( self::$people ) ) {
+			return self::$people;
 		}
 
 		$cache_key = self::get_cache_key();
@@ -385,22 +392,47 @@ class Tree {
 		}
 
 		if ( is_array( $cached ) ) {
-			$people = $cached;
-			return $people;
+			self::$people = $cached;
+			return self::$people;
 		}
 
-		$people = self::build_people();
+		self::$people = self::build_people();
 
-		wp_cache_set( $cache_key, $people, self::CACHE_GROUP, HOUR_IN_SECONDS );
-		set_transient( $cache_key, $people, HOUR_IN_SECONDS );
+		wp_cache_set( $cache_key, self::$people, self::CACHE_GROUP, HOUR_IN_SECONDS );
+		set_transient( $cache_key, self::$people, HOUR_IN_SECONDS );
 
-		return $people;
+		return self::$people;
 	}
 
 	public static function flush_cache() {
+		self::$people = null;
+
 		$cache_key = self::get_cache_key();
 		wp_cache_delete( $cache_key, self::CACHE_GROUP );
 		delete_transient( $cache_key );
+	}
+
+	/**
+	 * Where a tree of this family naturally starts: nobody recorded above them,
+	 * and the most people below. Zero when nothing is connected to anything.
+	 */
+	public static function suggest_root() {
+		$best  = 0;
+		$found = 0;
+
+		foreach ( self::get_people() as $id => $person ) {
+			if ( ! empty( $person['parents'] ) || empty( $person['children'] ) ) {
+				continue;
+			}
+
+			$count = self::count_descendants( $id );
+			if ( $count > $found ) {
+				$best  = $id;
+				$found = $count;
+			}
+		}
+
+		return $best;
 	}
 
 	private static function get_cache_key() {

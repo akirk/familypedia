@@ -184,6 +184,39 @@ class Gedcom {
 				<input type="hidden" name="familypedia_action" value="<?php echo esc_attr( self::SELECT_ACTION ); ?>" />
 				<input type="hidden" name="familypedia_review" value="<?php echo esc_attr( $token ); ?>" />
 				<?php wp_nonce_field( self::SELECT_ACTION ); ?>
+
+				<?php
+				/*
+				 * Taking the whole file is the common case, and picking through a
+				 * table of hundreds to say so is a poor way to spend an afternoon.
+				 * It sits above the table, so the answer to "import all of it" is
+				 * one button before any scrolling starts.
+				 */
+				?>
+				<div class="familypedia-gedcom-review__actions">
+					<button type="submit" name="familypedia_import_all" value="1" class="familypedia-button familypedia-button--primary">
+						<?php
+						echo esc_html(
+							sprintf(
+								// translators: %d is a number of people.
+								_n( 'Import all %d person', 'Import all %d people', $total, 'familypedia' ),
+								$total
+							)
+						);
+						?>
+					</button>
+					<span class="familypedia-field__hint"><?php esc_html_e( 'Or pick people below and import just those.', 'familypedia' ); ?></span>
+				</div>
+
+				<?php if ( ! Front_Page::has_tree() ) : ?>
+					<p class="familypedia-field familypedia-field--check">
+						<label>
+							<input type="checkbox" name="familypedia_front_page_tree" value="1" <?php checked( $this->front_page_tree_default() ); ?> />
+							<?php esc_html_e( 'Put the biggest branch on the front page as a family tree', 'familypedia' ); ?>
+						</label>
+					</p>
+				<?php endif; ?>
+
 				<p class="familypedia-gedcom-review__views">
 					<button type="button" class="familypedia-button familypedia-button--primary" data-familypedia-gedcom-view="connected">
 						<?php
@@ -324,6 +357,21 @@ class Gedcom {
 		wp_app_enqueue_script( 'familypedia-gedcom', Assets::url( 'gedcom.js' ), array(), Assets::version( 'gedcom.js' ), true );
 	}
 
+	/**
+	 * Whether the front page tree is offered ticked. A wiki with nobody on it yet
+	 * is one where this import is the whole family, and a family tree is what its
+	 * front page wants to lead with. On a wiki that already has people, adding to
+	 * their front page is a decision for them to make.
+	 */
+	private function front_page_tree_default() {
+		return ! Person::get_all(
+			array(
+				'fields'         => 'ids',
+				'posts_per_page' => 1,
+			)
+		);
+	}
+
 	public function export_download() {
 		if ( ! self::can_export() ) {
 			wp_die( esc_html__( 'Sorry, you are not allowed to export GEDCOM data.', 'familypedia' ), 403 );
@@ -458,8 +506,14 @@ class Gedcom {
 			$this->fail( 'review_expired' );
 		}
 
-		$selected = isset( $_POST['familypedia_people'] ) && is_array( $_POST['familypedia_people'] ) ? array_map( 'sanitize_text_field', wp_unslash( $_POST['familypedia_people'] ) ) : array();
-		$result   = $this->import_string( $contents, $selected );
+		// A null selection is everybody, which is what the button above the table asks for.
+		if ( empty( $_POST['familypedia_import_all'] ) ) {
+			$selected = isset( $_POST['familypedia_people'] ) && is_array( $_POST['familypedia_people'] ) ? array_map( 'sanitize_text_field', wp_unslash( $_POST['familypedia_people'] ) ) : array();
+		} else {
+			$selected = null;
+		}
+
+		$result = $this->import_string( $contents, $selected );
 		if ( is_wp_error( $result ) ) {
 			// The file is kept, so that the selection can be corrected and sent again.
 			Editor::set_notice( $result->get_error_message(), 'error' );
@@ -468,14 +522,20 @@ class Gedcom {
 		}
 
 		$this->delete_import_file( $token );
-		Editor::set_notice(
-			sprintf(
-				// translators: %1$d is a number of people created, %2$d a number updated.
-				__( 'GEDCOM import complete. Created %1$d people and updated %2$d people.', 'familypedia' ),
-				$result['created'],
-				$result['updated']
-			)
+
+		$notice = sprintf(
+			// translators: %1$d is a number of people created, %2$d a number updated.
+			__( 'GEDCOM import complete. Created %1$d people and updated %2$d people.', 'familypedia' ),
+			$result['created'],
+			$result['updated']
 		);
+
+		// The import has just rewritten the family, so ask about it afterwards.
+		if ( ! empty( $_POST['familypedia_front_page_tree'] ) && Front_Page::add_tree( Tree::suggest_root() ) ) {
+			$notice .= ' ' . __( 'The biggest branch is now on the front page.', 'familypedia' );
+		}
+
+		Editor::set_notice( $notice );
 		wp_safe_redirect( self::get_page_url() );
 		exit;
 	}

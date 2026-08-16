@@ -60,7 +60,8 @@ The home page is a post, edited in the block editor under *Familypedia → Front
 Page* or from the *Edit this page* link at the foot of the page itself. It starts
 out holding the two blocks the page used to be built from — the highlights box
 and the recently updated list — so a family tree on the home page is a matter of
-adding the Family Tree block and choosing where the branch starts.
+adding the Family Tree block and choosing where the branch starts. A GEDCOM
+import offers to do that for you.
 
 Emptying the post puts those two blocks back: the home page is never blank.
 
@@ -84,9 +85,18 @@ marked green.
 ## GEDCOM import and export
 
 Administrators import and export GEDCOM files on the app's own
-*Import / Export* page. An upload opens a review step where you can pick
-individual entries or whole descendant subtrees before importing. Existing
-people are matched by a previously stored GEDCOM xref first, then by name — and
+*Import / Export* page. An upload opens a review step, which leads with a button
+that takes the whole file — the usual answer, and one click above the table
+rather than a scroll through it. Below that you can pick individual entries or
+whole descendant subtrees instead.
+
+The review step also offers to put the biggest branch on the front page as a
+family tree. It is ticked to begin with on a wiki that has nobody on it yet,
+where the import is the whole family, and left alone once the front page already
+draws a tree.
+
+Existing people are matched by a previously stored GEDCOM xref first, then by
+name — and
 where a birth year is known on both sides it has to agree, so one person is not
 overwritten by a namesake.
 

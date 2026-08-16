@@ -425,6 +425,17 @@
 		apply();
 	});
 
+	/*
+	 * Enter in the filter field would submit the form through its first button,
+	 * which is the one that imports the whole file. Filtering is not asking for
+	 * that.
+	 */
+	review.addEventListener('keydown', function (event) {
+		if (event.key === 'Enter' && event.target.closest('[data-familypedia-gedcom-filter]')) {
+			event.preventDefault();
+		}
+	});
+
 	apply();
 	refresh();
 }());

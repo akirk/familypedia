@@ -202,6 +202,58 @@ class Front_Page {
 		return Links::filter_content( $content );
 	}
 
+	/**
+	 * Whether the front page already draws a family tree. What is rendered when
+	 * the post is empty is the default content, so that is what gets asked.
+	 */
+	public static function has_tree() {
+		$post    = self::get_post();
+		$content = $post ? trim( $post->post_content ) : '';
+
+		if ( '' === $content ) {
+			$content = self::DEFAULT_CONTENT;
+		}
+
+		return false !== strpos( $content, 'wp:' . Tree::BLOCK_NAME . ' ' );
+	}
+
+	/**
+	 * Add a family tree to the end of the front page, starting from one person.
+	 *
+	 * @param int $root Person to start the branch from.
+	 * @return bool Whether a tree was added.
+	 */
+	public static function add_tree( $root ) {
+		$root = (int) $root;
+		if ( ! $root || self::has_tree() ) {
+			return false;
+		}
+
+		$post = self::ensure_post();
+		if ( ! $post ) {
+			return false;
+		}
+
+		$content = trim( $post->post_content );
+		if ( '' === $content ) {
+			// An empty post renders the default content, so appending to nothing
+			// would quietly drop the two blocks the page was showing.
+			$content = self::DEFAULT_CONTENT;
+		}
+
+		$content .= "\n\n" . '<!-- wp:familypedia/tree {"root":' . $root . ',"showDates":true} /-->';
+
+		$updated = wp_update_post(
+			array(
+				'ID'           => $post->ID,
+				'post_content' => wp_slash( $content ),
+			),
+			true
+		);
+
+		return ! is_wp_error( $updated );
+	}
+
 	public static function can_edit() {
 		$post = self::get_post();
 
