@@ -41,7 +41,7 @@ offers each of them with their birth year.
 
 | Path | What it is |
 | --- | --- |
-| `/familypedia/` | The home page: a person of the hour, and the dates coming up |
+| `/familypedia/` | The home page, laid out in the block editor |
 | `/familypedia/people` | Everyone, grouped by initial, with a search |
 | `/familypedia/<name>` | A person, their infobox and their text |
 | `/familypedia/<name>/edit` | The form for that person's facts |
@@ -53,6 +53,16 @@ offers each of them with their birth year.
 | `/familypedia/new` | Add a person |
 
 The calendar and birthday pages can be switched off in *Settings → Familypedia*.
+
+## The front page
+
+The home page is a post, edited in the block editor under *Familypedia → Front
+Page* or from the *Edit this page* link at the foot of the page itself. It starts
+out holding the two blocks the page used to be built from — the highlights box
+and the recently updated list — so a family tree on the home page is a matter of
+adding the Family Tree block and choosing where the branch starts.
+
+Emptying the post puts those two blocks back: the home page is never blank.
 
 ## Roles and privacy
 
@@ -82,11 +92,13 @@ overwritten by a namesake.
 
 ## Blocks
 
-Three blocks are available in a person's text:
+Five blocks are available, in a person's text and on the front page alike:
 
 - **Family Tree** — a descendant outline starting from one person.
 - **Family Calendar** — every date on the wiki.
 - **Birthday Calendar** — the birthdays of the living.
+- **Family Highlights** — the person of the hour, and the dates coming up next.
+- **Recently Updated People** — the people whose pages changed last.
 
 ## Static archives
 

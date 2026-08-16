@@ -14,6 +14,7 @@ class Main {
 		new Bio();
 		new Calendar();
 		new Editor();
+		new Front_Page();
 		new Gedcom();
 		new Private_Site();
 		new Settings();
@@ -97,6 +98,8 @@ class Main {
 	public static function setup() {
 		self::setup_roles();
 		Person::register_post_type();
+		Front_Page::register_post_type();
+		Front_Page::ensure_post();
 		flush_rewrite_rules();
 	}
 

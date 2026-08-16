@@ -214,6 +214,33 @@
 	margin: 0.35rem 0 0;
 }
 
+/*
+ * Lists of people. These live here rather than with the app's own styles
+ * because the "Recently updated" block renders them wherever it is placed.
+ */
+.familypedia-person-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+
+.familypedia-person-list li {
+	margin: 0.35rem 0;
+}
+
+.familypedia-person-list__meta {
+	color: #54595d;
+}
+
+/* No clear: the highlights box floats, and this list is meant to run beside it. */
+.familypedia-recent {
+	margin: 0 0 1.5rem;
+}
+
+.familypedia-recent h2 {
+	margin-top: 0;
+}
+
 .familypedia-calendar-month {
 	clear: both;
 	margin: 0 0 2rem;
