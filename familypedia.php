@@ -3,7 +3,7 @@
  * Plugin Name: Familypedia
  * Plugin URI: https://github.com/akirk/familypedia
  * Description: Keep your family history in a wiki app hosted on WordPress.
- * Version: 1.0.0
+ * Version: 1.0.0+4c29b218391a
  * Requires at least: 6.0
  * Requires PHP: 7.4
  * Author: Alex Kirk
