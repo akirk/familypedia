@@ -31,11 +31,11 @@
 	var dropLabel = l10n.drop;
 	var branchLabel = l10n.dropBranch;
 	var toggleLabel = l10n.toggle;
-	// Everything starts folded, so picking a branch reads as the few
-	// lines it hangs from rather than a wall of names. Kept outside
-	// the drawing, which starts over on every tick, so a branch
-	// opened up stays open while the selection changes.
-	var opened = Object.create(null);
+	// Branches are drawn open, so the selection reads as the outline the
+	// wiki will show once it is imported. Folding is remembered here, not
+	// in the drawing, which starts over on every tick: a branch folded
+	// away stays folded while the selection changes.
+	var folded = Object.create(null);
 	// Far past what anyone reads. Drawing every node of a whole-file
 	// selection would only make ticking a box slow.
 	var TREE_LIMIT = 400;
@@ -115,11 +115,14 @@
 		node.setAttribute('data-familypedia-gedcom-node', xref);
 		node.appendChild(document.createTextNode(entry.name));
 
+		// Written the way the wiki's own tree writes it: the space stays
+		// outside the span, which does not wrap.
 		var years = yearRange(entry);
 		if (years) {
 			var dates = document.createElement('span');
-			dates.className = 'familypedia-gedcom-tree__years';
-			dates.textContent = ' (' + years + ')';
+			dates.className = 'familypedia-tree__years';
+			dates.textContent = '(' + years + ')';
+			node.appendChild(document.createTextNode(' '));
 			node.appendChild(dates);
 		}
 
@@ -173,15 +176,15 @@
 		toggle.className = 'familypedia-gedcom-tree__mark familypedia-gedcom-tree__toggle';
 		toggle.setAttribute('data-familypedia-gedcom-toggle', xref);
 		toggle.setAttribute('aria-label', toggleLabel);
-		setOpen(toggle, list, !!opened[xref]);
+		setOpen(toggle, list, !folded[xref]);
 
 		return toggle;
 	}
 
 	function fold(toggle) {
 		var xref = toggle.getAttribute('data-familypedia-gedcom-toggle');
-		opened[xref] = !opened[xref];
-		setOpen(toggle, toggle.closest('li').querySelector('ul'), opened[xref]);
+		folded[xref] = !folded[xref];
+		setOpen(toggle, toggle.closest('li').querySelector('ul'), !folded[xref]);
 	}
 
 	function setOpen(toggle, list, open) {
@@ -190,7 +193,7 @@
 		// itself and not the part of it that happens to be in view.
 		list.hidden = !open;
 		toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
-		toggle.textContent = open ? '▼' : '►';
+		toggle.textContent = open ? '▾' : '▸';
 	}
 
 	function renderPerson(xref, state) {
@@ -211,10 +214,12 @@
 		var partners = (person(xref).partners || []).filter(function (partner) {
 			return state.selected[partner] && !state.drawn[partner];
 		});
+		// The same mark the wiki's own tree puts between a couple: every
+		// family record this comes from becomes a marriage on import.
 		partners.forEach(function (partner) {
 			state.drawn[partner] = true;
 			state.left -= 1;
-			line.appendChild(document.createTextNode(' & '));
+			line.appendChild(document.createTextNode(' ⚭ '));
 			line.appendChild(nameOf(partner));
 		});
 
