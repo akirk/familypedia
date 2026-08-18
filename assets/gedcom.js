@@ -553,6 +553,8 @@
 	// dropped connection is just asking the same run to carry on.
 	var lastRun = null;
 
+	var downloadImages = review.querySelector('[data-familypedia-gedcom-download-images]');
+
 	if (form && progress && settings.endpoint && window.fetch) {
 		form.addEventListener('submit', function (event) {
 			var selected = Array.prototype.slice
@@ -568,7 +570,7 @@
 			}
 
 			event.preventDefault();
-			start(selected, frontRoots ? frontRoots.value : '');
+			start(selected, frontRoots ? frontRoots.value : '', !!(downloadImages && downloadImages.checked));
 		});
 	}
 
@@ -593,13 +595,13 @@
 		});
 	}
 
-	function start(selected, front) {
+	function start(selected, front, wantsImages) {
 		progress.hidden = false;
 		progress.classList.remove('familypedia-gedcom-progress--failed');
 		working(true);
 		say(l10n.starting, 0);
 
-		send(settings.endpoint, { token: settings.token, selected: selected, front_page_roots: front })
+		send(settings.endpoint, { token: settings.token, selected: selected, front_page_roots: front, download_images: wantsImages })
 			.then(function (started) {
 				lastRun = started.run;
 				return step(started.run);

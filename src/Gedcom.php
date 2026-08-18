@@ -159,6 +159,10 @@ class Gedcom {
 			'front'    => sanitize_text_field( (string) $request->get_param( 'front_page_roots' ) ),
 		);
 
+		// Asked here, on the review screen, rather than at upload time —
+		// right where the import itself is about to start.
+		$this->save_import_state( $token, array( 'download_images' => ! empty( $request->get_param( 'download_images' ) ) ) );
+
 		// Lets a content file uploaded alongside this one join the run, so
 		// each person's text lands right after the person themselves.
 		$state = $this->add_content_to_run_state( $state, $token );
@@ -587,6 +591,15 @@ class Gedcom {
 				<input type="hidden" name="familypedia_review" value="<?php echo esc_attr( $token ); ?>" />
 				<?php wp_nonce_field( self::SELECT_ACTION ); ?>
 
+				<?php if ( false !== $this->get_content_file( $token ) ) : ?>
+					<p class="familypedia-field familypedia-field--check">
+						<label>
+							<input type="checkbox" name="download_images" value="1" data-familypedia-gedcom-download-images />
+							<?php esc_html_e( 'Also download images into the media library and use them as the page photo', 'familypedia' ); ?>
+						</label>
+					</p>
+				<?php endif; ?>
+
 				<?php
 				/*
 				 * Taking the whole file is the common case, and scrolling a tree of
@@ -960,13 +973,7 @@ class Gedcom {
 			return;
 		}
 
-		$this->save_import_state(
-			$token,
-			array(
-				'content'         => $path,
-				'download_images' => ! empty( $_POST['download_images'] ),
-			)
-		);
+		$this->save_import_state( $token, array( 'content' => $path ) );
 	}
 
 	private function write_temp_file( $prefix, $contents ) {
@@ -1064,6 +1071,10 @@ class Gedcom {
 		}
 
 		$selected = isset( $_POST['familypedia_people'] ) && is_array( $_POST['familypedia_people'] ) ? array_map( 'sanitize_text_field', wp_unslash( $_POST['familypedia_people'] ) ) : array();
+
+		// Asked here, on the review screen, rather than at upload time —
+		// right where the import itself is about to start.
+		$this->save_import_state( $token, array( 'download_images' => ! empty( $_POST['download_images'] ) ) );
 
 		$result = $this->import_string( $contents, $selected );
 		if ( is_wp_error( $result ) ) {
@@ -2203,7 +2214,9 @@ class Gedcom {
 
 	/**
 	 * The optional content field inside the GEDCOM upload form, for
-	 * importing both together in one step.
+	 * importing both together in one step. Whether to also download
+	 * images is asked on the review screen instead, right where the
+	 * import itself starts, rather than here.
 	 */
 	private function render_content_field() {
 		?>
@@ -2211,12 +2224,6 @@ class Gedcom {
 			<label>
 				<?php esc_html_e( 'Content file (optional)', 'familypedia' ); ?><br />
 				<input type="file" name="content" accept=".xml,text/xml" />
-			</label>
-		</p>
-		<p>
-			<label>
-				<input type="checkbox" name="download_images" value="1" />
-				<?php esc_html_e( 'Also download images into the media library and use them as the page photo', 'familypedia' ); ?>
 			</label>
 		</p>
 		<?php

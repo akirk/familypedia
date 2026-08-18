@@ -53,7 +53,7 @@ $familypedia_content = Links::filter_content( $familypedia_content );
 				<?php if ( ! Person::is_related_page( $familypedia_person ) ) : ?>
 					<a href="<?php echo esc_url( Person::edit_url( $familypedia_person ) ); ?>"><?php esc_html_e( 'Edit facts', 'familypedia' ); ?></a>
 				<?php endif; ?>
-				<a href="<?php echo esc_url( get_edit_post_link( $familypedia_person->ID, '' ) ); ?>"><?php esc_html_e( 'Edit text', 'familypedia' ); ?></a>
+				<a href="<?php echo esc_url( get_edit_post_link( $familypedia_person->ID, '' ) ); ?>"><?php esc_html_e( 'Edit', 'familypedia' ); ?></a>
 				<?php if ( ! Person::is_related_page( $familypedia_person ) && Related_Page::can_create( $familypedia_person->ID ) ) : ?>
 					<a href="<?php echo esc_url( Related_Page::add_url( $familypedia_person ) ); ?>"><?php esc_html_e( 'Add a related page', 'familypedia' ); ?></a>
 				<?php endif; ?>
