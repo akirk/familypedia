@@ -82,6 +82,12 @@ class Content_Export {
 					?>
 				</span>
 			</p>
+			<p>
+				<label>
+					<input type="checkbox" name="download_images" value="1" />
+					<?php esc_html_e( 'Also download images into the media library and use them as the page photo', 'familypedia' ); ?>
+				</label>
+			</p>
 			<button type="submit" class="familypedia-button familypedia-button--primary"><?php esc_html_e( 'Upload content', 'familypedia' ); ?></button>
 		</form>
 		<?php
@@ -116,6 +122,9 @@ class Content_Export {
 			$lines[] = '<item>';
 			$lines[] = '<title>' . $this->cdata( get_the_title( $person ) ) . '</title>';
 			$lines[] = '<content:encoded>' . $this->cdata( $person->post_content ) . '</content:encoded>';
+			if ( has_post_thumbnail( $person ) ) {
+				$lines[] = '<wp:attachment_url>' . $this->cdata( wp_get_attachment_url( get_post_thumbnail_id( $person ) ) ) . '</wp:attachment_url>';
+			}
 			$lines[] = '<wp:postmeta>';
 			$lines[] = '<wp:meta_key>' . $this->cdata( self::META_KEY ) . '</wp:meta_key>';
 			$lines[] = '<wp:meta_value>' . $this->cdata( $ids[ $person->ID ] ) . '</wp:meta_value>';
@@ -161,25 +170,33 @@ class Content_Export {
 			$this->fail( 'empty_file' );
 		}
 
-		$result = $this->apply_content( $contents );
+		$download_images = ! empty( $_POST['download_images'] );
+
+		$result = $this->apply_content( $contents, $download_images );
 		if ( is_wp_error( $result ) ) {
 			$this->fail( $result->get_error_code() );
 		}
 
-		Editor::set_notice(
-			$result['skipped']
-				? sprintf(
-					// translators: %1$d is a number of updated pages, %2$d a number of skipped entries.
-					__( 'Updated %1$d pages. %2$d entries in the file did not match a person on the wiki and were skipped.', 'familypedia' ),
-					$result['updated'],
-					$result['skipped']
-				)
-				: sprintf(
-					// translators: %d is a number of updated pages.
-					__( 'Updated %d pages.', 'familypedia' ),
-					$result['updated']
-				)
-		);
+		$message = $result['skipped']
+			? sprintf(
+				// translators: %1$d is a number of updated pages, %2$d a number of skipped entries.
+				__( 'Updated %1$d pages. %2$d entries in the file did not match a person on the wiki and were skipped.', 'familypedia' ),
+				$result['updated'],
+				$result['skipped']
+			)
+			: sprintf(
+				// translators: %d is a number of updated pages.
+				__( 'Updated %d pages.', 'familypedia' ),
+				$result['updated']
+			);
+		if ( $result['images'] ) {
+			$message .= ' ' . sprintf(
+				// translators: %d is a number of downloaded images.
+				__( 'Downloaded %d images into the media library.', 'familypedia' ),
+				$result['images']
+			);
+		}
+		Editor::set_notice( $message );
 		wp_safe_redirect( Gedcom::get_page_url() );
 		exit;
 	}
@@ -197,9 +214,18 @@ class Content_Export {
 
 	/**
 	 * Apply an uploaded content file to the people it matches. Never
-	 * creates a person and never touches anything but post_content.
+	 * creates a person and never touches anything but post_content — and,
+	 * when asked, a person's photo.
+	 *
+	 * @param string $contents        The uploaded content file.
+	 * @param bool   $download_images Whether to fetch each matched person's
+	 *                                image into the media library and set
+	 *                                it as their photo. Off by default: this
+	 *                                is the one part of the file that makes
+	 *                                an outbound request, to whatever URL
+	 *                                the file names.
 	 */
-	public function apply_content( $contents ) {
+	public function apply_content( $contents, $download_images = false ) {
 		$previous_setting = libxml_use_internal_errors( true );
 		$xml               = simplexml_load_string( $contents, 'SimpleXMLElement', LIBXML_NONET );
 		libxml_clear_errors();
@@ -212,12 +238,14 @@ class Content_Export {
 		$index   = $this->gedcom->existing_page_index();
 		$updated = 0;
 		$skipped = 0;
+		$images  = 0;
 
 		foreach ( $xml->channel->item as $item ) {
 			$wp_fields  = $item->children( 'http://wordpress.org/export/1.2/' );
 			$content_ns = $item->children( 'http://purl.org/rss/1.0/modules/content/' );
 			$title      = trim( (string) $item->title );
 			$content    = isset( $content_ns->encoded ) ? (string) $content_ns->encoded : '';
+			$image_url  = isset( $wp_fields->attachment_url ) ? trim( (string) $wp_fields->attachment_url ) : '';
 
 			$post_id = $this->match_post( $wp_fields, $title, $index );
 			if ( ! $post_id ) {
@@ -234,12 +262,42 @@ class Content_Export {
 				)
 			);
 			++$updated;
+
+			if ( $download_images && $image_url && $this->sideload_image( $image_url, $post_id ) ) {
+				++$images;
+			}
 		}
 
 		return array(
 			'updated' => $updated,
 			'skipped' => $skipped,
+			'images'  => $images,
 		);
+	}
+
+	/**
+	 * Fetch a person's image into the media library and set it as their
+	 * photo. Only ever called when the upload form's checkbox asked for it.
+	 */
+	private function sideload_image( $url, $post_id ) {
+		if ( ! wp_http_validate_url( $url ) ) {
+			return false;
+		}
+
+		if ( ! function_exists( 'media_sideload_image' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/media.php';
+			require_once ABSPATH . 'wp-admin/includes/file.php';
+			require_once ABSPATH . 'wp-admin/includes/image.php';
+		}
+
+		$attachment_id = media_sideload_image( $url, $post_id, null, 'id' );
+		if ( is_wp_error( $attachment_id ) ) {
+			return false;
+		}
+
+		set_post_thumbnail( $post_id, $attachment_id );
+
+		return true;
 	}
 
 	/**
