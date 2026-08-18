@@ -468,31 +468,12 @@ body.familypedia ::placeholder {
 	background: var(--familypedia-surface-alt);
 }
 
-.familypedia-gedcom-tree__list,
-.familypedia-gedcom-tree__list ul {
-	list-style: none;
-	margin: 0;
-	padding: 0;
-}
-
-.familypedia-gedcom-tree__list ul {
-	border-left: 1px solid rgba(127, 127, 127, 0.3);
-	margin-left: 0.4em;
-	padding-left: 1.1em;
-}
-
-.familypedia-gedcom-tree__list li {
-	line-height: 1.6;
-	margin: 0.15em 0;
-}
-
+/*
+ * The selection is drawn by tree.css, the same stylesheet as the tree on the
+ * wiki itself. Only the controls this review adds to the lines live here.
+ */
 .familypedia-gedcom-tree__line--branch [data-familypedia-gedcom-node] {
 	cursor: pointer;
-}
-
-.familypedia-gedcom-tree__years {
-	color: rgba(127, 127, 127, 0.9);
-	white-space: nowrap;
 }
 
 /* The buttons inside the tree are text: the lines have to read as names. */
@@ -506,19 +487,24 @@ body.familypedia ::placeholder {
 	padding: 0;
 }
 
+/* Set beside the names the way the tree's own "… n more" link is. */
 .familypedia-gedcom-tree__drop {
+	color: rgba(127, 127, 127, 0.9);
+	font-size: 0.9em;
 	margin-left: 0.8em;
 	text-decoration: underline;
 }
 
+/* Narrow enough that the names still line up close to the guide line. */
 .familypedia-gedcom-tree__mark {
 	display: inline-block;
 	text-align: center;
-	width: 1.4em;
+	width: 1.1em;
 }
 
 .familypedia-gedcom-tree__toggle {
-	font-size: 1.1em;
+	color: rgba(127, 127, 127, 0.9);
+	font-size: 0.85em;
 	line-height: 1;
 	vertical-align: baseline;
 }

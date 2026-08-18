@@ -141,6 +141,10 @@ class Front_Page {
 			return $url;
 		}
 
+		return self::url();
+	}
+
+	public static function url() {
 		return home_url( '/' . App::URL_PATH . '/' );
 	}
 

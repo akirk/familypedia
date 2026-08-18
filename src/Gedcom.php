@@ -248,7 +248,9 @@ class Gedcom {
 			'created'  => $state['created'],
 			'updated'  => $state['updated'],
 			'message'  => $message,
-			'redirect' => self::get_page_url(),
+			// The people are in now, so the front page is where there is
+			// something to see; the import form has nothing left to say.
+			'redirect' => Front_Page::url(),
 		);
 	}
 
@@ -317,6 +319,17 @@ class Gedcom {
 			return;
 		}
 
+		// Import comes first: filling an empty wiki is what this page is
+		// opened for, while an export is something to reach for now and then.
+		if ( self::can_import() ) {
+			?>
+			<section class="familypedia-gedcom">
+				<h2><?php esc_html_e( 'Import', 'familypedia' ); ?></h2>
+				<?php $this->render_upload_form(); ?>
+			</section>
+			<?php
+		}
+
 		if ( self::can_export() ) {
 			?>
 			<section class="familypedia-gedcom">
@@ -327,15 +340,6 @@ class Gedcom {
 					<?php wp_nonce_field( self::EXPORT_ACTION ); ?>
 					<button type="submit" class="familypedia-button familypedia-button--primary"><?php esc_html_e( 'Download GEDCOM', 'familypedia' ); ?></button>
 				</form>
-			</section>
-			<?php
-		}
-
-		if ( self::can_import() ) {
-			?>
-			<section class="familypedia-gedcom">
-				<h2><?php esc_html_e( 'Import', 'familypedia' ); ?></h2>
-				<?php $this->render_upload_form(); ?>
 			</section>
 			<?php
 		}
@@ -555,10 +559,11 @@ class Gedcom {
 						<?php endforeach; ?>
 					</tbody>
 				</table>
-				<div class="familypedia-gedcom-tree">
+				<?php // The wiki's own tree styles draw this, so the selection looks like the pages it will become. ?>
+				<div class="familypedia-gedcom-tree familypedia-tree">
 					<h3><?php esc_html_e( 'Selected people', 'familypedia' ); ?></h3>
 					<p class="familypedia-field__hint" data-familypedia-gedcom-tree-empty><?php esc_html_e( 'Tick people above and the branches you picked are drawn here, so you can drop the ones you did not mean to take.', 'familypedia' ); ?></p>
-					<ul class="familypedia-gedcom-tree__list" data-familypedia-gedcom-tree-list></ul>
+					<ul class="familypedia-tree__list" data-familypedia-gedcom-tree-list></ul>
 					<p class="familypedia-field__hint" data-familypedia-gedcom-tree-more hidden>
 						<?php
 						echo esc_html(
@@ -805,7 +810,7 @@ class Gedcom {
 		}
 
 		Editor::set_notice( $notice );
-		wp_safe_redirect( self::get_page_url() );
+		wp_safe_redirect( Front_Page::url() );
 		exit;
 	}
 
