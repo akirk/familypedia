@@ -35,6 +35,14 @@ class Gedcom {
 	const CONTENT_LINK_META_KEY = '_gedcom_link';
 
 	/**
+	 * The meta key on a content item for an additional page under a
+	 * person — a chronology, a house, anything with no facts of its own
+	 * for GEDCOM to carry — rather than a person's own text. Its value is
+	 * the xref of the person the page belongs under.
+	 */
+	const CONTENT_RELATED_META_KEY = '_gedcom_related_of';
+
+	/**
 	 * The instance Main built, so that the app template renders the page
 	 * through the object that already handled the request.
 	 *
@@ -264,7 +272,7 @@ class Gedcom {
 		// file's links to them can be resolved — while it is still
 		// parked, before it is cleaned up below.
 		if ( ! empty( $state['content'] ) ) {
-			$this->resolve_content_links( $state['token'], $state['id_map'] );
+			$this->resolve_content_links( $state['token'], $state['id_map'], isset( $state['related_id_map'] ) ? $state['related_id_map'] : array() );
 		}
 
 		$this->delete_import_file( $state['token'] );
@@ -2127,7 +2135,7 @@ class Gedcom {
 	 */
 	private function render_content_export_button() {
 		?>
-		<p><?php esc_html_e( 'The content file carries the page text GEDCOM has no room for.', 'familypedia' ); ?></p>
+		<p><?php esc_html_e( 'The content file carries the page text GEDCOM has no room for, including any additional pages under a person.', 'familypedia' ); ?></p>
 		<form class="familypedia-download-form" method="post" action="<?php echo esc_url( self::get_page_url() ); ?>">
 			<input type="hidden" name="familypedia_action" value="<?php echo esc_attr( self::CONTENT_EXPORT_ACTION ); ?>" />
 			<?php wp_nonce_field( self::CONTENT_EXPORT_ACTION ); ?>
@@ -2178,24 +2186,62 @@ class Gedcom {
 			return false;
 		}
 
-		$by_xref = array();
+		$by_xref        = array();
+		$by_related     = array();
+		$by_related_key = array();
+
 		foreach ( $xml->channel->item as $item ) {
-			$wp_fields = $item->children( 'http://wordpress.org/export/1.2/' );
-			foreach ( $wp_fields->postmeta as $meta ) {
-				$meta_fields = $meta->children( 'http://wordpress.org/export/1.2/' );
-				if ( self::CONTENT_META_KEY === (string) $meta_fields->meta_key ) {
-					$by_xref[ (string) $meta_fields->meta_value ] = $item;
-					break;
-				}
+			$xref = $this->item_meta( $item, self::CONTENT_META_KEY );
+			if ( $xref ) {
+				$by_xref[ $xref ] = $item;
+				continue;
+			}
+
+			$related_of = $this->item_meta( $item, self::CONTENT_RELATED_META_KEY );
+			if ( $related_of ) {
+				$by_related[ $related_of ][] = $item;
+				$by_related_key[ 'R:' . $related_of . ':' . $this->related_item_slug( $item ) ] = $item;
 			}
 		}
 
 		$this->content_index_cache[ $token ] = array(
 			'by_xref'         => $by_xref,
+			'by_related'      => $by_related,
+			'by_related_key'  => $by_related_key,
 			'download_images' => $this->content_download_images_requested( $token ),
 		);
 
 		return $this->content_index_cache[ $token ];
+	}
+
+	/**
+	 * One <wp:postmeta> value from an item, by its meta key. Only meta
+	 * keys with a single value make sense to read this way; a content
+	 * link, which an item can carry several of, is read separately by
+	 * content_links_for_item().
+	 */
+	private function item_meta( $item, $meta_key ) {
+		$wp_fields = $item->children( 'http://wordpress.org/export/1.2/' );
+		foreach ( $wp_fields->postmeta as $meta ) {
+			$meta_fields = $meta->children( 'http://wordpress.org/export/1.2/' );
+			if ( $meta_key === (string) $meta_fields->meta_key ) {
+				return (string) $meta_fields->meta_value;
+			}
+		}
+
+		return '';
+	}
+
+	/**
+	 * The slug an additional page's item carries, or one made from its
+	 * title when the file has none — found the same way at export and
+	 * import, so a page matches itself on the next round trip.
+	 */
+	private function related_item_slug( $item ) {
+		$wp_fields = $item->children( 'http://wordpress.org/export/1.2/' );
+		$slug      = isset( $wp_fields->post_name ) ? sanitize_title( (string) $wp_fields->post_name ) : '';
+
+		return '' !== $slug ? $slug : sanitize_title( trim( (string) $item->title ) );
 	}
 
 	/**
@@ -2207,10 +2253,11 @@ class Gedcom {
 			return $state;
 		}
 
-		$state['content'] = array(
+		$state['content']         = array(
 			'updated' => 0,
 			'images'  => 0,
 		);
+		$state['related_id_map']  = array();
 
 		return $state;
 	}
@@ -2218,7 +2265,9 @@ class Gedcom {
 	/**
 	 * Applies one person's text right after the person themselves, using
 	 * the post that was just resolved directly — there is nothing left to
-	 * match, since this is the exact page that xref just became.
+	 * match, since this is the exact page that xref just became. Also
+	 * creates or updates any additional page the content file carries
+	 * under this same person.
 	 */
 	private function apply_content_to_person( $state, $xref, $post_id ) {
 		if ( empty( $state['content'] ) || empty( $state['token'] ) ) {
@@ -2226,15 +2275,93 @@ class Gedcom {
 		}
 
 		$index = $this->content_index( $state['token'] );
-		if ( ! $index || ! isset( $index['by_xref'][ $xref ] ) ) {
+		if ( ! $index ) {
 			return $state;
 		}
 
-		$result = $this->apply_content_item_to_post( $index['by_xref'][ $xref ], $post_id, $index['download_images'] );
-		++$state['content']['updated'];
-		$state['content']['images'] += $result['images'];
+		if ( isset( $index['by_xref'][ $xref ] ) ) {
+			$result = $this->apply_content_item_to_post( $index['by_xref'][ $xref ], $post_id, $index['download_images'] );
+			++$state['content']['updated'];
+			$state['content']['images'] += $result['images'];
+		}
+
+		return $this->apply_related_content_to_person( $state, $index, $xref, $post_id );
+	}
+
+	/**
+	 * Creates or updates one additional page for each item the content
+	 * file carries under this person's xref, now that the person
+	 * themselves has a post here to be its parent.
+	 */
+	private function apply_related_content_to_person( $state, $index, $parent_xref, $parent_post_id ) {
+		if ( empty( $index['by_related'][ $parent_xref ] ) ) {
+			return $state;
+		}
+
+		foreach ( $index['by_related'][ $parent_xref ] as $item ) {
+			$child_id = $this->resolve_related_page( $item, $parent_post_id );
+			if ( ! $child_id || is_wp_error( $child_id ) ) {
+				continue;
+			}
+
+			$result = $this->apply_content_item_to_post( $item, $child_id, $index['download_images'] );
+			++$state['content']['updated'];
+			$state['content']['images'] += $result['images'];
+
+			$state['related_id_map'][ 'R:' . $parent_xref . ':' . $this->related_item_slug( $item ) ] = $child_id;
+		}
 
 		return $state;
+	}
+
+	/**
+	 * The post an additional-page item belongs on: an existing one under
+	 * the same parent with the same slug, so a re-import updates rather
+	 * than duplicates, or a newly created one.
+	 *
+	 * @return int|\WP_Error Post ID, or an error from wp_insert_post().
+	 */
+	private function resolve_related_page( $item, $parent_post_id ) {
+		$title = trim( (string) $item->title );
+		$slug  = $this->related_item_slug( $item );
+
+		$existing = get_posts(
+			array(
+				'post_type'      => Person::POST_TYPE,
+				'post_parent'    => $parent_post_id,
+				'name'           => $slug,
+				'post_status'    => array( 'publish', 'draft', 'private', 'trash' ),
+				'posts_per_page' => 1,
+			)
+		);
+
+		if ( $existing ) {
+			$post_id = (int) $existing[0]->ID;
+			wp_update_post(
+				wp_slash(
+					array(
+						'ID'          => $post_id,
+						'post_title'  => $title,
+						'post_status' => 'publish',
+					)
+				)
+			);
+
+			return $post_id;
+		}
+
+		return wp_insert_post(
+			wp_slash(
+				array(
+					'post_type'   => Person::POST_TYPE,
+					'post_parent' => $parent_post_id,
+					'post_title'  => $title,
+					'post_name'   => $slug,
+					'post_status' => 'publish',
+				)
+			),
+			true
+		);
 	}
 
 	private function content_summary_message( $updated, $images ) {
@@ -2276,7 +2403,7 @@ class Gedcom {
 			return $message;
 		}
 
-		$this->resolve_content_links( $token, $id_map );
+		$this->resolve_content_links( $token, $id_map, $result['related_id_map'] );
 
 		return $message . $this->content_summary_message( $result['updated'], $result['images'] );
 	}
@@ -2297,8 +2424,13 @@ class Gedcom {
 	}
 
 	private function export_content_string() {
-		$people = $this->get_export_people();
-		$ids    = $this->export_xrefs( $people );
+		$people    = $this->get_export_people();
+		$ids       = $this->export_xrefs( $people );
+		$related   = $this->get_export_related_pages( $people, $ids );
+		$link_keys = $ids;
+		foreach ( $related as $entry ) {
+			$link_keys[ $entry['post']->ID ] = $entry['key'];
+		}
 
 		$lines = array(
 			'<?xml version="1.0" encoding="UTF-8" ?>',
@@ -2307,36 +2439,112 @@ class Gedcom {
 		);
 
 		foreach ( $people as $person ) {
-			$links   = array();
-			$content = $this->relativize_images( $person->post_content );
-			$content = $this->relativize_links( $content, $ids, $links );
+			$lines = array_merge(
+				$lines,
+				$this->export_content_item_lines( $person, $link_keys, array( self::CONTENT_META_KEY => $ids[ $person->ID ] ) )
+			);
+		}
 
-			$lines[] = '<item>';
-			$lines[] = '<title>' . $this->cdata( get_the_title( $person ) ) . '</title>';
-			$lines[] = '<content:encoded>' . $this->cdata( $content ) . '</content:encoded>';
-			if ( has_post_thumbnail( $person ) ) {
-				$lines[] = '<wp:attachment_url>' . $this->cdata( wp_get_attachment_url( get_post_thumbnail_id( $person ) ) ) . '</wp:attachment_url>';
-			}
-			foreach ( $this->content_image_urls( $person->post_content ) as $url ) {
-				$lines[] = '<wp:content_image_url>' . $this->cdata( $url ) . '</wp:content_image_url>';
-			}
-			$lines[] = '<wp:postmeta>';
-			$lines[] = '<wp:meta_key>' . $this->cdata( self::CONTENT_META_KEY ) . '</wp:meta_key>';
-			$lines[] = '<wp:meta_value>' . $this->cdata( $ids[ $person->ID ] ) . '</wp:meta_value>';
-			$lines[] = '</wp:postmeta>';
-			foreach ( $links as $path => $target_xref ) {
-				$lines[] = '<wp:postmeta>';
-				$lines[] = '<wp:meta_key>' . $this->cdata( self::CONTENT_LINK_META_KEY ) . '</wp:meta_key>';
-				$lines[] = '<wp:meta_value>' . $this->cdata( $path . '|' . $target_xref ) . '</wp:meta_value>';
-				$lines[] = '</wp:postmeta>';
-			}
-			$lines[] = '</item>';
+		foreach ( $related as $entry ) {
+			$lines = array_merge(
+				$lines,
+				$this->export_content_item_lines( $entry['post'], $link_keys, array( self::CONTENT_RELATED_META_KEY => $entry['parent_xref'] ), $entry['post']->post_name )
+			);
 		}
 
 		$lines[] = '</channel>';
 		$lines[] = '</rss>';
 
 		return implode( "\n", $lines ) . "\n";
+	}
+
+	/**
+	 * One <item>'s worth of lines: a person's own text, or an additional
+	 * page's — the two differ only in which postmeta says what the item
+	 * is, and whether a slug travels with it for a page that has no xref
+	 * of its own to be found by.
+	 *
+	 * @param \WP_Post $post      The person or additional page being exported.
+	 * @param array    $link_keys Post ID => the key a link to it should
+	 *                            record, covering people and additional
+	 *                            pages alike.
+	 * @param array    $meta_pairs Meta key => value to identify this item.
+	 * @param string   $post_name  The item's own slug, when it needs one to
+	 *                             be found again on re-import.
+	 */
+	private function export_content_item_lines( $post, $link_keys, $meta_pairs, $post_name = '' ) {
+		$links   = array();
+		$content = $this->relativize_images( $post->post_content );
+		$content = $this->relativize_links( $content, $link_keys, $links );
+
+		$lines = array( '<item>' );
+		$lines[] = '<title>' . $this->cdata( get_the_title( $post ) ) . '</title>';
+		if ( '' !== $post_name ) {
+			$lines[] = '<wp:post_name>' . $this->cdata( $post_name ) . '</wp:post_name>';
+		}
+		$lines[] = '<content:encoded>' . $this->cdata( $content ) . '</content:encoded>';
+		if ( has_post_thumbnail( $post ) ) {
+			$lines[] = '<wp:attachment_url>' . $this->cdata( wp_get_attachment_url( get_post_thumbnail_id( $post ) ) ) . '</wp:attachment_url>';
+		}
+		foreach ( $this->content_image_urls( $post->post_content ) as $url ) {
+			$lines[] = '<wp:content_image_url>' . $this->cdata( $url ) . '</wp:content_image_url>';
+		}
+		foreach ( $meta_pairs as $meta_key => $meta_value ) {
+			$lines[] = '<wp:postmeta>';
+			$lines[] = '<wp:meta_key>' . $this->cdata( $meta_key ) . '</wp:meta_key>';
+			$lines[] = '<wp:meta_value>' . $this->cdata( $meta_value ) . '</wp:meta_value>';
+			$lines[] = '</wp:postmeta>';
+		}
+		foreach ( $links as $path => $target_key ) {
+			$lines[] = '<wp:postmeta>';
+			$lines[] = '<wp:meta_key>' . $this->cdata( self::CONTENT_LINK_META_KEY ) . '</wp:meta_key>';
+			$lines[] = '<wp:meta_value>' . $this->cdata( $path . '|' . $target_key ) . '</wp:meta_value>';
+			$lines[] = '</wp:postmeta>';
+		}
+		$lines[] = '</item>';
+
+		return $lines;
+	}
+
+	/**
+	 * Additional pages under an exported person: pages with no facts of
+	 * their own, so GEDCOM has no record of them, but with text this file
+	 * can still carry. Direct children only, matching what the app itself
+	 * treats as an additional page.
+	 *
+	 * @param \WP_Post[] $people Exported people.
+	 * @param array      $ids    Post ID => xref, from export_xrefs().
+	 * @return array Each entry: 'post' the child WP_Post, 'parent_xref',
+	 *               and 'key' the target key a link to it is recorded by.
+	 */
+	private function get_export_related_pages( $people, $ids ) {
+		$related = array();
+
+		foreach ( $people as $person ) {
+			$children = get_posts(
+				array(
+					'post_type'      => Person::POST_TYPE,
+					'post_parent'    => $person->ID,
+					'post_status'    => 'publish',
+					'posts_per_page' => -1,
+				)
+			);
+
+			foreach ( $children as $child ) {
+				// Already exported in its own right as a person with facts.
+				if ( isset( $ids[ $child->ID ] ) ) {
+					continue;
+				}
+
+				$related[] = array(
+					'post'        => $child,
+					'parent_xref' => $ids[ $person->ID ],
+					'key'         => 'R:' . $ids[ $person->ID ] . ':' . $child->post_name,
+				);
+			}
+		}
+
+		return $related;
 	}
 
 	/**
@@ -2447,26 +2655,38 @@ class Gedcom {
 	 * while the content file is still parked — it reads the same file
 	 * apply_content_to_person()/apply_content() already read from.
 	 */
-	private function resolve_content_links( $token, $id_map ) {
+	private function resolve_content_links( $token, $id_map, $related_id_map = array() ) {
 		$index = $this->content_index( $token );
 		if ( ! $index ) {
 			return;
 		}
 
-		foreach ( $id_map as $xref => $post_id ) {
-			if ( ! isset( $index['by_xref'][ $xref ] ) ) {
-				continue;
-			}
+		// One lookup for every kind of link target: a plain GEDCOM xref
+		// never collides with the "R:…" keys additional pages use.
+		$targets = $id_map + $related_id_map;
 
-			$links = $this->content_links_for_item( $index['by_xref'][ $xref ] );
+		$items_by_post = array();
+		foreach ( $id_map as $xref => $post_id ) {
+			if ( isset( $index['by_xref'][ $xref ] ) ) {
+				$items_by_post[ $post_id ] = $index['by_xref'][ $xref ];
+			}
+		}
+		foreach ( $related_id_map as $key => $post_id ) {
+			if ( isset( $index['by_related_key'][ $key ] ) ) {
+				$items_by_post[ $post_id ] = $index['by_related_key'][ $key ];
+			}
+		}
+
+		foreach ( $items_by_post as $post_id => $item ) {
+			$links = $this->content_links_for_item( $item );
 			if ( ! $links ) {
 				continue;
 			}
 
 			$replacements = array();
-			foreach ( $links as $path => $target_xref ) {
-				if ( isset( $id_map[ $target_xref ] ) ) {
-					$replacements[ $path ] = get_permalink( $id_map[ $target_xref ] );
+			foreach ( $links as $path => $target_key ) {
+				if ( isset( $targets[ $target_key ] ) ) {
+					$replacements[ $path ] = get_permalink( $targets[ $target_key ] );
 				}
 			}
 
@@ -2514,12 +2734,19 @@ class Gedcom {
 			return $xml;
 		}
 
-		$index   = $this->existing_page_index();
-		$updated = 0;
-		$skipped = 0;
-		$images  = 0;
+		$index          = $this->existing_page_index();
+		$updated        = 0;
+		$skipped        = 0;
+		$images         = 0;
+		$related_id_map = array();
 
 		foreach ( $xml->channel->item as $item ) {
+			// Additional pages are handled in the second pass below, once
+			// every person they could belong under already has a page.
+			if ( $this->item_meta( $item, self::CONTENT_RELATED_META_KEY ) ) {
+				continue;
+			}
+
 			$result = $this->apply_content_item( $item, $index, $download_images );
 			if ( $result['matched'] ) {
 				++$updated;
@@ -2529,10 +2756,35 @@ class Gedcom {
 			$images += $result['images'];
 		}
 
+		foreach ( $xml->channel->item as $item ) {
+			$parent_xref = $this->item_meta( $item, self::CONTENT_RELATED_META_KEY );
+			if ( ! $parent_xref ) {
+				continue;
+			}
+
+			if ( empty( $index['xref'][ $parent_xref ] ) ) {
+				++$skipped;
+				continue;
+			}
+
+			$child_id = $this->resolve_related_page( $item, (int) $index['xref'][ $parent_xref ] );
+			if ( ! $child_id || is_wp_error( $child_id ) ) {
+				++$skipped;
+				continue;
+			}
+
+			$result = $this->apply_content_item_to_post( $item, $child_id, $download_images );
+			++$updated;
+			$images += $result['images'];
+
+			$related_id_map[ 'R:' . $parent_xref . ':' . $this->related_item_slug( $item ) ] = $child_id;
+		}
+
 		return array(
-			'updated' => $updated,
-			'skipped' => $skipped,
-			'images'  => $images,
+			'updated'        => $updated,
+			'skipped'        => $skipped,
+			'images'         => $images,
+			'related_id_map' => $related_id_map,
 		);
 	}
 

@@ -16,7 +16,13 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 $familypedia_person = App::routed_person();
-$familypedia_id     = $familypedia_person ? (int) $familypedia_person->ID : 0;
+
+if ( $familypedia_person && Person::is_related_page( $familypedia_person ) ) {
+	require __DIR__ . '/edit-related.php';
+	return;
+}
+
+$familypedia_id = $familypedia_person ? (int) $familypedia_person->ID : 0;
 
 if ( $familypedia_id ? ! Editor::can_edit( $familypedia_id ) : ! Editor::can_create() ) {
 	status_header( 403 );

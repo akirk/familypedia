@@ -17,6 +17,7 @@ class Main {
 		new Front_Page();
 		new Gedcom();
 		new Private_Site();
+		new Related_Page();
 		new Settings();
 		new Static_Archive();
 		new Tree();
