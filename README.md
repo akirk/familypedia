@@ -7,13 +7,24 @@
 - License: [GPLv2 or later](http://www.gnu.org/licenses/gpl-2.0.html)
 - Stable tag: 1.0.0
 
-Keep your family history in a wiki app hosted on WordPress.
+Like Wikipedia, but private and just for your family.
 
 ## Description
 
-Familypedia is a [WpApp](https://github.com/akirk/wp-app) version of
-[Family Wiki](https://github.com/akirk/family-wiki), with two deliberate
-differences:
+Familypedia turns your WordPress site into a private, Wikipedia-style
+encyclopedia about your family. Each relative gets their own page for their
+story and photos, and Familypedia builds the family calendar and birthday
+reminders automatically from the dates you enter.
+
+It's also compatible with the family tree apps you may already use:
+Familypedia reads and writes GEDCOM files, the format used by Ancestry,
+MyHeritage, Gramps, and most other genealogy software. Import what you have
+and the tree becomes a starting point, not the project — so you can spend
+your time on the stories and photos a tree alone can't hold.
+
+Under the hood, Familypedia is a [WpApp](https://github.com/akirk/wp-app)
+version of [Family Wiki](https://github.com/akirk/family-wiki), with two
+deliberate differences:
 
 - **People are a custom post type**, not WordPress pages, so the family wiki
   does not take over the site it lives on.
