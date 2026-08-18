@@ -5,8 +5,7 @@
  * same way as a GEDCOM file, and matched onto people a GEDCOM import already
  * put on the wiki — by the same xref where one is available, otherwise by an
  * unambiguous exact name match. It only ever updates a person that already
- * exists; it never creates one. Compatible with Family Wiki's own content
- * file, since both plugins agree on the same shape.
+ * exists; it never creates one.
  *
  * @package Familypedia
  */
@@ -50,7 +49,7 @@ class Content_Export {
 	 */
 	public function render_export_button() {
 		?>
-		<p><?php esc_html_e( 'The content file carries the page text GEDCOM has no room for. Compatible with Family Wiki.', 'familypedia' ); ?></p>
+		<p><?php esc_html_e( 'The content file carries the page text GEDCOM has no room for.', 'familypedia' ); ?></p>
 		<form class="familypedia-download-form" method="post" action="<?php echo esc_url( Gedcom::get_page_url() ); ?>">
 			<input type="hidden" name="familypedia_action" value="<?php echo esc_attr( self::EXPORT_ACTION ); ?>" />
 			<?php wp_nonce_field( self::EXPORT_ACTION ); ?>
