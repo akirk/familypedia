@@ -15,7 +15,8 @@ class Main {
 		new Calendar();
 		new Editor();
 		new Front_Page();
-		new Gedcom();
+		$gedcom = new Gedcom();
+		new Content_Export( $gedcom );
 		new Private_Site();
 		new Settings();
 		new Static_Archive();

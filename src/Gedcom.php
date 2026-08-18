@@ -324,6 +324,7 @@ class Gedcom {
 			<section class="familypedia-gedcom">
 				<h2><?php esc_html_e( 'Import', 'familypedia' ); ?></h2>
 				<?php $this->render_upload_form(); ?>
+				<?php do_action( 'familypedia_gedcom_page_after_import' ); ?>
 			</section>
 			<?php
 		}
@@ -333,12 +334,43 @@ class Gedcom {
 			<section class="familypedia-gedcom">
 				<h2><?php esc_html_e( 'Export', 'familypedia' ); ?></h2>
 				<p><?php esc_html_e( 'Download the people on this wiki as a GEDCOM file.', 'familypedia' ); ?></p>
-				<form method="post" action="<?php echo esc_url( self::get_page_url() ); ?>">
+				<form class="familypedia-download-form" method="post" action="<?php echo esc_url( self::get_page_url() ); ?>">
 					<input type="hidden" name="familypedia_action" value="<?php echo esc_attr( self::EXPORT_ACTION ); ?>" />
 					<?php wp_nonce_field( self::EXPORT_ACTION ); ?>
 					<button type="submit" class="familypedia-button familypedia-button--primary"><?php esc_html_e( 'Download GEDCOM', 'familypedia' ); ?></button>
+					<span class="familypedia-download-check" aria-hidden="true" hidden>&#10003;</span>
 				</form>
+				<?php do_action( 'familypedia_gedcom_page_after_export' ); ?>
 			</section>
+			<?php
+		}
+
+		if ( self::can_import() || self::can_export() ) {
+			?>
+			<style>
+				.familypedia-download-form {
+					align-items: center;
+					display: inline-flex;
+				}
+
+				.familypedia-download-check {
+					color: #008a20;
+					font-weight: 600;
+					margin-left: 0.5em;
+				}
+			</style>
+			<script>
+				(function () {
+					document.querySelectorAll( '.familypedia-download-form' ).forEach( function ( form ) {
+						form.addEventListener( 'submit', function () {
+							var check = form.querySelector( '.familypedia-download-check' );
+							if ( check ) {
+								check.hidden = false;
+							}
+						} );
+					} );
+				}());
+			</script>
 			<?php
 		}
 	}
@@ -991,10 +1023,13 @@ class Gedcom {
 	 * different xref is deliberately not matched by name — so every previously
 	 * imported person would be created a second time.
 	 *
+	 * Public so a paired export (Content_Export) assigns the same person the
+	 * same xref within the same request.
+	 *
 	 * @param \WP_Post[] $people People being exported.
 	 * @return array Post ID => xref.
 	 */
-	private function export_xrefs( $people ) {
+	public function export_xrefs( $people ) {
 		$ids   = array();
 		$taken = array();
 
@@ -1027,7 +1062,7 @@ class Gedcom {
 		return $ids;
 	}
 
-	private function get_export_people() {
+	public function get_export_people() {
 		return array_values( array_filter( Person::get_all(), array( $this, 'has_person_data' ) ) );
 	}
 
@@ -1277,9 +1312,10 @@ class Gedcom {
 
 	/**
 	 * Pages that a GEDCOM entry could land on, looked up the same way the
-	 * import does: by a previously stored xref first, then by title.
+	 * import does: by a previously stored xref first, then by title. Public
+	 * so Content_Export can match a content file onto the same people.
 	 */
-	private function existing_page_index() {
+	public function existing_page_index() {
 		$index = array(
 			'xref'    => array(),
 			'title'   => array(),
