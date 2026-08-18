@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Familypedia
  * Plugin URI: https://github.com/akirk/familypedia
- * Description: Keep your family history in a wiki app hosted on WordPress.
+ * Description: Like Wikipedia, but private and just for your family — stories and photos for every relative, compatible with other family tree apps via GEDCOM.
  * Version: 1.0.0
  * Requires at least: 6.0
  * Requires PHP: 7.4
