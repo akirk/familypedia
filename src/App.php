@@ -21,7 +21,9 @@ class App extends BaseApp {
 			array(
 				'app_name'                     => $this->get_plugin_name(),
 				'app_name_textdomain'          => 'familypedia',
+				'require_login'                => true,
 				'my_apps'                      => true,
+				'my_apps_icon'                 => 'dashicons-groups',
 				// A wiki about a family is read by the family, so the masterbar
 				// is only useful once you are signed in.
 				'show_masterbar_for_anonymous' => false,
