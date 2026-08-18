@@ -24,9 +24,11 @@ class Front_Page {
 
 	/**
 	 * What a fresh front page holds, and what is rendered when the post is
-	 * missing: the page as it looked before it could be edited.
+	 * missing: the page as it looked before it could be edited. The
+	 * Recently Updated People block is still available to add by hand; it
+	 * is no longer part of the default.
 	 */
-	const DEFAULT_CONTENT = "<!-- wp:familypedia/highlights /-->\n\n<!-- wp:familypedia/recent /-->";
+	const DEFAULT_CONTENT = '<!-- wp:familypedia/highlights /-->';
 
 	const RECENT_LIMIT = 10;
 
@@ -244,7 +246,7 @@ class Front_Page {
 		$content = trim( $post->post_content );
 		if ( '' === $content ) {
 			// An empty post renders the default content, so appending to nothing
-			// would quietly drop the two blocks the page was showing.
+			// would quietly drop the block the page was showing.
 			$content = self::DEFAULT_CONTENT;
 		}
 

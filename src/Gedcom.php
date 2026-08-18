@@ -18,6 +18,22 @@ class Gedcom {
 	const BATCH_PEOPLE = 25;
 	const BATCH_FAMILIES = 50;
 
+	const CONTENT_EXPORT_ACTION = 'familypedia_content_export';
+
+	/**
+	 * The meta key the content file uses to match a person, independent of
+	 * XREF_META above: its value is whatever xref the paired GEDCOM export
+	 * assigned that person in the same request.
+	 */
+	const CONTENT_META_KEY = '_gedcom_xref';
+
+	/**
+	 * The meta key a link between two exported people travels under: its
+	 * value is the relative path the link was rewritten to, and the xref
+	 * of the person it points to, joined with "|".
+	 */
+	const CONTENT_LINK_META_KEY = '_gedcom_link';
+
 	/**
 	 * The instance Main built, so that the app template renders the page
 	 * through the object that already handled the request.
@@ -25,6 +41,14 @@ class Gedcom {
 	 * @var Gedcom|null
 	 */
 	private static $instance;
+
+	/**
+	 * Per token: a companion content file's items keyed by xref, and
+	 * whether it asked to download images — parsed once per request no
+	 * matter how many people in a batch ask for it. False for a token with
+	 * no content file.
+	 */
+	private $content_index_cache = array();
 
 	public function __construct() {
 		if ( ! self::$instance ) {
@@ -117,6 +141,10 @@ class Gedcom {
 			'front'    => sanitize_text_field( (string) $request->get_param( 'front_page_roots' ) ),
 		);
 
+		// Lets a content file uploaded alongside this one join the run, so
+		// each person's text lands right after the person themselves.
+		$state = $this->add_content_to_run_state( $state, $token );
+
 		if ( ! set_transient( self::RUN_TRANSIENT_PREFIX . $run, $state, HOUR_IN_SECONDS ) ) {
 			return new \WP_Error( 'familypedia_run_failed', $this->error_message( 'store_failed' ), array( 'status' => 500 ) );
 		}
@@ -187,6 +215,11 @@ class Gedcom {
 			} else {
 				++$state['created'];
 			}
+
+			// A content file, if the run has one, applies this person's
+			// text right after the person themselves — the progress bar is
+			// one person at a time either way.
+			$state = $this->apply_content_to_person( $state, $xref, $person['id'] );
 		}
 
 		if ( $state['cursor'] >= $total ) {
@@ -226,6 +259,14 @@ class Gedcom {
 
 	private function finish_run( $run, $state ) {
 		Main::flush_family_data_cache();
+
+		// Every person this run touched now has a page, so a content
+		// file's links to them can be resolved — while it is still
+		// parked, before it is cleaned up below.
+		if ( ! empty( $state['content'] ) ) {
+			$this->resolve_content_links( $state['token'], $state['id_map'] );
+		}
+
 		$this->delete_import_file( $state['token'] );
 		delete_transient( self::RUN_TRANSIENT_PREFIX . $run );
 
@@ -235,6 +276,11 @@ class Gedcom {
 			$state['created'],
 			$state['updated']
 		);
+
+		// A content file, if the run had one, adds its own summary sentence.
+		if ( ! empty( $state['content'] ) ) {
+			$message .= $this->content_summary_message( $state['content']['updated'], $state['content']['images'] );
+		}
 
 		$message .= $this->front_page_tree_notice( $state['front'], $state['id_map'] );
 
@@ -305,6 +351,8 @@ class Gedcom {
 			$this->import_upload();
 		} elseif ( self::SELECT_ACTION === $action ) {
 			$this->import_selected();
+		} elseif ( self::CONTENT_EXPORT_ACTION === $action ) {
+			$this->export_content_download();
 		}
 	}
 
@@ -333,12 +381,43 @@ class Gedcom {
 			<section class="familypedia-gedcom">
 				<h2><?php esc_html_e( 'Export', 'familypedia' ); ?></h2>
 				<p><?php esc_html_e( 'Download the people on this wiki as a GEDCOM file.', 'familypedia' ); ?></p>
-				<form method="post" action="<?php echo esc_url( self::get_page_url() ); ?>">
+				<form class="familypedia-download-form" method="post" action="<?php echo esc_url( self::get_page_url() ); ?>">
 					<input type="hidden" name="familypedia_action" value="<?php echo esc_attr( self::EXPORT_ACTION ); ?>" />
 					<?php wp_nonce_field( self::EXPORT_ACTION ); ?>
 					<button type="submit" class="familypedia-button familypedia-button--primary"><?php esc_html_e( 'Download GEDCOM', 'familypedia' ); ?></button>
+					<span class="familypedia-download-check" aria-hidden="true" hidden>&#10003;</span>
 				</form>
+				<?php $this->render_content_export_button(); ?>
 			</section>
+			<?php
+		}
+
+		if ( self::can_import() || self::can_export() ) {
+			?>
+			<style>
+				.familypedia-download-form {
+					align-items: center;
+					display: inline-flex;
+				}
+
+				.familypedia-download-check {
+					color: #008a20;
+					font-weight: 600;
+					margin-left: 0.5em;
+				}
+			</style>
+			<script>
+				(function () {
+					document.querySelectorAll( '.familypedia-download-form' ).forEach( function ( form ) {
+						form.addEventListener( 'submit', function () {
+							var check = form.querySelector( '.familypedia-download-check' );
+							if ( check ) {
+								check.hidden = false;
+							}
+						} );
+					} );
+				}());
+			</script>
 			<?php
 		}
 	}
@@ -363,6 +442,7 @@ class Gedcom {
 					?>
 				</span>
 			</p>
+			<?php $this->render_content_field(); ?>
 			<button type="submit" class="familypedia-button familypedia-button--primary"><?php esc_html_e( 'Upload and review GEDCOM', 'familypedia' ); ?></button>
 		</form>
 		<?php
@@ -760,6 +840,10 @@ class Gedcom {
 			$this->fail( 'store_failed' );
 		}
 
+		// Lets a content file uploaded in the same form park itself under
+		// this same token, so it can join the import once it starts.
+		$this->park_content_file( $token );
+
 		wp_safe_redirect( add_query_arg( 'familypedia_review', $token, self::get_page_url() ) );
 		exit;
 	}
@@ -779,16 +863,54 @@ class Gedcom {
 	/**
 	 * Park the uploaded file between the upload and the selection request.
 	 *
-	 * The file itself stays on disk and only its location goes into the
-	 * transient: a GEDCOM is easily hundreds of kilobytes, which is more than
-	 * belongs in an option row, and more than some databases will accept there.
+	 * The files themselves stay on disk and only their location goes into
+	 * the transient: a GEDCOM is easily hundreds of kilobytes, which is more
+	 * than belongs in an option row, and more than some databases will
+	 * accept there. One transient covers both the GEDCOM file and its
+	 * content file, since they always arrive and leave together.
 	 */
 	private function store_import_file( $token, $contents ) {
+		$path = $this->write_temp_file( 'familypedia-gedcom-' . $token, $contents );
+
+		return $path && $this->save_import_state( $token, array( 'gedcom' => $path ) );
+	}
+
+	/**
+	 * Park a content file uploaded alongside a GEDCOM file, under the same
+	 * token. Silently does nothing when no content file came along, or it
+	 * failed: it is optional, and should never be the reason a GEDCOM
+	 * import fails.
+	 */
+	private function park_content_file( $token ) {
+		if ( empty( $_FILES['content']['tmp_name'] ) || UPLOAD_ERR_OK !== (int) $_FILES['content']['error'] || ! is_uploaded_file( $_FILES['content']['tmp_name'] ) ) {
+			return;
+		}
+
+		$contents = file_get_contents( $_FILES['content']['tmp_name'] ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+		if ( false === $contents || '' === trim( $contents ) || is_wp_error( $this->parse_content_xml( $contents ) ) ) {
+			return;
+		}
+
+		$path = $this->write_temp_file( 'familypedia-content-' . $token, $contents );
+		if ( ! $path ) {
+			return;
+		}
+
+		$this->save_import_state(
+			$token,
+			array(
+				'content'         => $path,
+				'download_images' => ! empty( $_POST['download_images'] ),
+			)
+		);
+	}
+
+	private function write_temp_file( $prefix, $contents ) {
 		if ( ! function_exists( 'wp_tempnam' ) ) {
 			require_once ABSPATH . 'wp-admin/includes/file.php';
 		}
 
-		$path = wp_tempnam( 'familypedia-gedcom-' . $token );
+		$path = wp_tempnam( $prefix );
 		if ( ! $path ) {
 			return false;
 		}
@@ -798,17 +920,52 @@ class Gedcom {
 			return false;
 		}
 
-		if ( ! set_transient( self::IMPORT_TRANSIENT_PREFIX . $token, $path, HOUR_IN_SECONDS ) ) {
-			wp_delete_file( $path );
-			return false;
+		return $path;
+	}
+
+	/**
+	 * Merge into whatever's already parked under this token, so the GEDCOM
+	 * file and a content file share one transient even though they arrive
+	 * as two separate temp files, possibly in two requests.
+	 */
+	private function save_import_state( $token, $changes ) {
+		$state = get_transient( self::IMPORT_TRANSIENT_PREFIX . $token );
+		if ( ! is_array( $state ) ) {
+			$state = array(
+				'gedcom'          => '',
+				'content'         => '',
+				'download_images' => false,
+			);
 		}
 
-		return true;
+		return set_transient( self::IMPORT_TRANSIENT_PREFIX . $token, array_merge( $state, $changes ), HOUR_IN_SECONDS );
+	}
+
+	private function import_state( $token ) {
+		$state = get_transient( self::IMPORT_TRANSIENT_PREFIX . $token );
+
+		return is_array( $state ) ? $state : array();
 	}
 
 	private function get_import_file( $token ) {
-		$path = get_transient( self::IMPORT_TRANSIENT_PREFIX . $token );
+		$state = $this->import_state( $token );
 
+		return empty( $state['gedcom'] ) ? false : $this->read_temp_file( $state['gedcom'] );
+	}
+
+	private function get_content_file( $token ) {
+		$state = $this->import_state( $token );
+
+		return empty( $state['content'] ) ? false : $this->read_temp_file( $state['content'] );
+	}
+
+	private function content_download_images_requested( $token ) {
+		$state = $this->import_state( $token );
+
+		return ! empty( $state['download_images'] );
+	}
+
+	private function read_temp_file( $path ) {
 		// Only ever read back a file this class parked in the temp directory.
 		if ( ! is_string( $path ) || 0 !== strpos( $path, get_temp_dir() ) || ! is_readable( $path ) ) {
 			return false;
@@ -820,11 +977,13 @@ class Gedcom {
 	}
 
 	private function delete_import_file( $token ) {
-		$path = get_transient( self::IMPORT_TRANSIENT_PREFIX . $token );
+		$state = $this->import_state( $token );
 		delete_transient( self::IMPORT_TRANSIENT_PREFIX . $token );
 
-		if ( is_string( $path ) && 0 === strpos( $path, get_temp_dir() ) && file_exists( $path ) ) {
-			wp_delete_file( $path );
+		foreach ( array( 'gedcom', 'content' ) as $key ) {
+			if ( ! empty( $state[ $key ] ) && 0 === strpos( $state[ $key ], get_temp_dir() ) && file_exists( $state[ $key ] ) ) {
+				wp_delete_file( $state[ $key ] );
+			}
 		}
 	}
 
@@ -850,8 +1009,6 @@ class Gedcom {
 			exit;
 		}
 
-		$this->delete_import_file( $token );
-
 		$notice = sprintf(
 			// translators: %1$d is a number of people created, %2$d a number updated.
 			__( 'GEDCOM import complete. Created %1$d people and updated %2$d people.', 'familypedia' ),
@@ -859,8 +1016,15 @@ class Gedcom {
 			$result['updated']
 		);
 
+		// The no-JS path has no per-person step for a content file to ride
+		// along with, so it goes in as one whole-file pass instead, while
+		// it is still parked — before delete_import_file() below.
+		$notice = $this->add_content_to_message( $notice, $token, $result['ids'] );
+
 		$front   = isset( $_POST['familypedia_front_page_roots'] ) ? sanitize_text_field( wp_unslash( $_POST['familypedia_front_page_roots'] ) ) : '';
 		$notice .= $this->front_page_tree_notice( $front, $result['ids'] );
+
+		$this->delete_import_file( $token );
 
 		Editor::set_notice( $notice );
 		wp_safe_redirect( Front_Page::url() );
@@ -990,6 +1154,9 @@ class Gedcom {
 	 * nobody falls through to matching by name, and a person already carrying a
 	 * different xref is deliberately not matched by name — so every previously
 	 * imported person would be created a second time.
+	 *
+	 * Shared with export_content_string(), so a person gets the same xref
+	 * in both files.
 	 *
 	 * @param \WP_Post[] $people People being exported.
 	 * @return array Post ID => xref.
@@ -1943,5 +2110,588 @@ class Gedcom {
 		);
 
 		return isset( $messages[ $error ] ) ? $messages[ $error ] : __( 'The GEDCOM import failed.', 'familypedia' );
+	}
+
+	/*
+	 * ------------------------------------------------------------------
+	 * The content file: the text written on a person's page, which GEDCOM
+	 * has no room for. It always rides along with a GEDCOM file, uploaded
+	 * in the same form and applied to each person right after the person
+	 * themselves, matched by the same xref. It only ever updates a person
+	 * that already exists; it never creates one.
+	 * ------------------------------------------------------------------
+	 */
+
+	/**
+	 * Grouped with the GEDCOM download button, not a section of its own.
+	 */
+	private function render_content_export_button() {
+		?>
+		<p><?php esc_html_e( 'The content file carries the page text GEDCOM has no room for.', 'familypedia' ); ?></p>
+		<form class="familypedia-download-form" method="post" action="<?php echo esc_url( self::get_page_url() ); ?>">
+			<input type="hidden" name="familypedia_action" value="<?php echo esc_attr( self::CONTENT_EXPORT_ACTION ); ?>" />
+			<?php wp_nonce_field( self::CONTENT_EXPORT_ACTION ); ?>
+			<button type="submit" class="familypedia-button familypedia-button--primary"><?php esc_html_e( 'Download Content', 'familypedia' ); ?></button>
+			<span class="familypedia-download-check" aria-hidden="true" hidden>&#10003;</span>
+		</form>
+		<?php
+	}
+
+	/**
+	 * The optional content field inside the GEDCOM upload form, for
+	 * importing both together in one step.
+	 */
+	private function render_content_field() {
+		?>
+		<p>
+			<label>
+				<?php esc_html_e( 'Content file (optional)', 'familypedia' ); ?><br />
+				<input type="file" name="content" accept=".xml,text/xml" />
+			</label>
+		</p>
+		<p>
+			<label>
+				<input type="checkbox" name="download_images" value="1" />
+				<?php esc_html_e( 'Also download images into the media library and use them as the page photo', 'familypedia' ); ?>
+			</label>
+		</p>
+		<?php
+	}
+
+	/**
+	 * A content file's items keyed by its people's xref, and whether it
+	 * asked to download images — parsed once per request no matter how many
+	 * people ask for it during a batch.
+	 *
+	 * @return array|false array( 'by_xref' => [...], 'download_images' => bool ), or false for a token with no content file.
+	 */
+	private function content_index( $token ) {
+		if ( array_key_exists( $token, $this->content_index_cache ) ) {
+			return $this->content_index_cache[ $token ];
+		}
+
+		$contents = $this->get_content_file( $token );
+		$xml      = false === $contents ? false : $this->parse_content_xml( $contents );
+
+		if ( false === $contents || is_wp_error( $xml ) ) {
+			$this->content_index_cache[ $token ] = false;
+			return false;
+		}
+
+		$by_xref = array();
+		foreach ( $xml->channel->item as $item ) {
+			$wp_fields = $item->children( 'http://wordpress.org/export/1.2/' );
+			foreach ( $wp_fields->postmeta as $meta ) {
+				$meta_fields = $meta->children( 'http://wordpress.org/export/1.2/' );
+				if ( self::CONTENT_META_KEY === (string) $meta_fields->meta_key ) {
+					$by_xref[ (string) $meta_fields->meta_value ] = $item;
+					break;
+				}
+			}
+		}
+
+		$this->content_index_cache[ $token ] = array(
+			'by_xref'         => $by_xref,
+			'download_images' => $this->content_download_images_requested( $token ),
+		);
+
+		return $this->content_index_cache[ $token ];
+	}
+
+	/**
+	 * If this run's token has a content file, give the run somewhere to
+	 * keep its counts as people are imported.
+	 */
+	private function add_content_to_run_state( $state, $token ) {
+		if ( ! $this->content_index( $token ) ) {
+			return $state;
+		}
+
+		$state['content'] = array(
+			'updated' => 0,
+			'images'  => 0,
+		);
+
+		return $state;
+	}
+
+	/**
+	 * Applies one person's text right after the person themselves, using
+	 * the post that was just resolved directly — there is nothing left to
+	 * match, since this is the exact page that xref just became.
+	 */
+	private function apply_content_to_person( $state, $xref, $post_id ) {
+		if ( empty( $state['content'] ) || empty( $state['token'] ) ) {
+			return $state;
+		}
+
+		$index = $this->content_index( $state['token'] );
+		if ( ! $index || ! isset( $index['by_xref'][ $xref ] ) ) {
+			return $state;
+		}
+
+		$result = $this->apply_content_item_to_post( $index['by_xref'][ $xref ], $post_id, $index['download_images'] );
+		++$state['content']['updated'];
+		$state['content']['images'] += $result['images'];
+
+		return $state;
+	}
+
+	private function content_summary_message( $updated, $images ) {
+		$message = ' ' . sprintf(
+			// translators: %d is a number of people whose text was applied.
+			__( 'Applied text from the content file to %d of them.', 'familypedia' ),
+			$updated
+		);
+
+		if ( $images ) {
+			$message .= ' ' . sprintf(
+				// translators: %d is a number of downloaded images.
+				__( 'Downloaded %d images into the media library.', 'familypedia' ),
+				$images
+			);
+		}
+
+		return $message;
+	}
+
+	/**
+	 * The no-JS path has no per-person step for a content file to ride
+	 * along with, so it goes in as one whole-file pass instead, matched by
+	 * xref or title the same way import_string() matches GEDCOM entries.
+	 * Called while the file is still parked, before delete_import_file().
+	 *
+	 * @param string $message The notice being built up.
+	 * @param string $token   The review token this import used.
+	 * @param array  $id_map  Xref => post ID, from this same import_string() call.
+	 */
+	private function add_content_to_message( $message, $token, $id_map ) {
+		$contents = $this->get_content_file( $token );
+		if ( false === $contents ) {
+			return $message;
+		}
+
+		$result = $this->apply_content( $contents, $this->content_download_images_requested( $token ) );
+		if ( is_wp_error( $result ) ) {
+			return $message;
+		}
+
+		$this->resolve_content_links( $token, $id_map );
+
+		return $message . $this->content_summary_message( $result['updated'], $result['images'] );
+	}
+
+	public function export_content_download() {
+		if ( ! self::can_export() ) {
+			wp_die( esc_html__( 'Sorry, you are not allowed to export content.', 'familypedia' ), 403 );
+		}
+		check_admin_referer( self::CONTENT_EXPORT_ACTION );
+
+		$filename = sanitize_file_name( wp_parse_url( home_url(), PHP_URL_HOST ) . '-familypedia-content-' . current_time( 'Ymd-His' ) . '.xml' );
+
+		nocache_headers();
+		header( 'Content-Type: text/xml; charset=UTF-8' );
+		header( 'Content-Disposition: attachment; filename="' . $filename . '"' );
+		echo $this->export_content_string();
+		exit;
+	}
+
+	private function export_content_string() {
+		$people = $this->get_export_people();
+		$ids    = $this->export_xrefs( $people );
+
+		$lines = array(
+			'<?xml version="1.0" encoding="UTF-8" ?>',
+			'<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:wp="http://wordpress.org/export/1.2/">',
+			'<channel>',
+		);
+
+		foreach ( $people as $person ) {
+			$links   = array();
+			$content = $this->relativize_images( $person->post_content );
+			$content = $this->relativize_links( $content, $ids, $links );
+
+			$lines[] = '<item>';
+			$lines[] = '<title>' . $this->cdata( get_the_title( $person ) ) . '</title>';
+			$lines[] = '<content:encoded>' . $this->cdata( $content ) . '</content:encoded>';
+			if ( has_post_thumbnail( $person ) ) {
+				$lines[] = '<wp:attachment_url>' . $this->cdata( wp_get_attachment_url( get_post_thumbnail_id( $person ) ) ) . '</wp:attachment_url>';
+			}
+			foreach ( $this->content_image_urls( $person->post_content ) as $url ) {
+				$lines[] = '<wp:content_image_url>' . $this->cdata( $url ) . '</wp:content_image_url>';
+			}
+			$lines[] = '<wp:postmeta>';
+			$lines[] = '<wp:meta_key>' . $this->cdata( self::CONTENT_META_KEY ) . '</wp:meta_key>';
+			$lines[] = '<wp:meta_value>' . $this->cdata( $ids[ $person->ID ] ) . '</wp:meta_value>';
+			$lines[] = '</wp:postmeta>';
+			foreach ( $links as $path => $target_xref ) {
+				$lines[] = '<wp:postmeta>';
+				$lines[] = '<wp:meta_key>' . $this->cdata( self::CONTENT_LINK_META_KEY ) . '</wp:meta_key>';
+				$lines[] = '<wp:meta_value>' . $this->cdata( $path . '|' . $target_xref ) . '</wp:meta_value>';
+				$lines[] = '</wp:postmeta>';
+			}
+			$lines[] = '</item>';
+		}
+
+		$lines[] = '</channel>';
+		$lines[] = '</rss>';
+
+		return implode( "\n", $lines ) . "\n";
+	}
+
+	/**
+	 * The same CDATA-splitting WordPress core's own WXR export uses, so a
+	 * page whose text happens to contain "]]>" can't break the file.
+	 */
+	private function cdata( $value ) {
+		return '<![CDATA[' . str_replace( ']]>', ']]]]><![CDATA[>', (string) $value ) . ']]>';
+	}
+
+	/**
+	 * This site's own image URLs referenced in a person's text, so the
+	 * importer has something to fetch — listed separately, in full, because
+	 * the text itself keeps only the path (see relativize_images()).
+	 */
+	private function content_image_urls( $content ) {
+		if ( ! preg_match_all( '/<img[^>]+src=["\']([^"\']+)["\']/i', $content, $matches ) ) {
+			return array();
+		}
+
+		$home = home_url();
+		$urls = array();
+		foreach ( array_unique( $matches[1] ) as $url ) {
+			if ( 0 === strpos( $url, $home ) ) {
+				$urls[] = $url;
+			}
+		}
+
+		return $urls;
+	}
+
+	/**
+	 * Strips this site's own domain from same-site image references in a
+	 * person's text, so the file does not silently hotlink a private wiki's
+	 * photos into wherever it ends up — the path is only good for anything
+	 * once the importer has actually downloaded the image.
+	 */
+	private function relativize_images( $content ) {
+		return preg_replace_callback(
+			'/(<img[^>]+src=["\'])' . preg_quote( home_url(), '/' ) . '([^"\']*)(["\'])/i',
+			function ( $matches ) {
+				return $matches[1] . $matches[2] . $matches[3];
+			},
+			$content
+		);
+	}
+
+	/**
+	 * Strips this site's own domain from same-site links in a person's
+	 * text, the same reason relativize_images() does it for photos. Where
+	 * a link points to another person in this same export, its path and
+	 * the xref it points to are collected into $links by reference, so the
+	 * importer can put back a working link once it knows where that
+	 * person landed there — a person's own URL structure is not something
+	 * a content file can know in advance, especially crossing between two
+	 * different plugins.
+	 */
+	private function relativize_links( $content, $ids, &$links ) {
+		$home = home_url();
+		// People are not a public post type with rewrite rules — their URLs
+		// are resolved by the app itself, not url_to_postid() — so the path
+		// is handed to the same lookup the app's own routing uses.
+		$prefix = '/' . App::URL_PATH . '/';
+
+		return preg_replace_callback(
+			'/(<a\s[^>]*href=["\'])' . preg_quote( $home, '/' ) . '([^"\']*)(["\'])/i',
+			function ( $matches ) use ( $ids, $prefix, &$links ) {
+				$path = $matches[2];
+				if ( 0 === strpos( $path, $prefix ) ) {
+					$person = Person::get_by_path( substr( $path, strlen( $prefix ) ) );
+					if ( $person && isset( $ids[ $person->ID ] ) ) {
+						$links[ $path ] = $ids[ $person->ID ];
+					}
+				}
+
+				return $matches[1] . $path . $matches[3];
+			},
+			$content
+		);
+	}
+
+	/**
+	 * The links a content item's text had to other exported people, as
+	 * path => the xref that link pointed to.
+	 */
+	private function content_links_for_item( $item ) {
+		$wp_fields = $item->children( 'http://wordpress.org/export/1.2/' );
+		$links     = array();
+
+		foreach ( $wp_fields->postmeta as $meta ) {
+			$meta_fields = $meta->children( 'http://wordpress.org/export/1.2/' );
+			if ( self::CONTENT_LINK_META_KEY !== (string) $meta_fields->meta_key ) {
+				continue;
+			}
+
+			$parts = explode( '|', (string) $meta_fields->meta_value, 2 );
+			if ( 2 === count( $parts ) && '' !== $parts[0] ) {
+				$links[ $parts[0] ] = $parts[1];
+			}
+		}
+
+		return $links;
+	}
+
+	/**
+	 * Puts working links back into the text of everyone this run touched
+	 * who had one, now that every person in $id_map has a page here. Called
+	 * while the content file is still parked — it reads the same file
+	 * apply_content_to_person()/apply_content() already read from.
+	 */
+	private function resolve_content_links( $token, $id_map ) {
+		$index = $this->content_index( $token );
+		if ( ! $index ) {
+			return;
+		}
+
+		foreach ( $id_map as $xref => $post_id ) {
+			if ( ! isset( $index['by_xref'][ $xref ] ) ) {
+				continue;
+			}
+
+			$links = $this->content_links_for_item( $index['by_xref'][ $xref ] );
+			if ( ! $links ) {
+				continue;
+			}
+
+			$replacements = array();
+			foreach ( $links as $path => $target_xref ) {
+				if ( isset( $id_map[ $target_xref ] ) ) {
+					$replacements[ $path ] = get_permalink( $id_map[ $target_xref ] );
+				}
+			}
+
+			if ( ! $replacements ) {
+				continue;
+			}
+
+			$post = get_post( $post_id );
+			if ( ! $post ) {
+				continue;
+			}
+
+			$new_content = str_replace( array_keys( $replacements ), array_values( $replacements ), $post->post_content );
+			if ( $new_content !== $post->post_content ) {
+				wp_update_post(
+					wp_slash(
+						array(
+							'ID'           => $post_id,
+							'post_content' => $new_content,
+						)
+					)
+				);
+			}
+		}
+	}
+
+	/**
+	 * Apply a content file to the people it matches. Never creates a
+	 * person and never touches anything but post_content — and, when
+	 * asked, a person's photo. Used for the no-JS whole-file path only; a
+	 * batched GEDCOM import applies each item as its own person is
+	 * resolved.
+	 *
+	 * @param string $contents        The content file.
+	 * @param bool   $download_images Whether to fetch each matched person's
+	 *                                image into the media library and set
+	 *                                it as their photo. Off by default:
+	 *                                this is the one part of the file that
+	 *                                makes an outbound request, to whatever
+	 *                                URL the file names.
+	 */
+	private function apply_content( $contents, $download_images = false ) {
+		$xml = $this->parse_content_xml( $contents );
+		if ( is_wp_error( $xml ) ) {
+			return $xml;
+		}
+
+		$index   = $this->existing_page_index();
+		$updated = 0;
+		$skipped = 0;
+		$images  = 0;
+
+		foreach ( $xml->channel->item as $item ) {
+			$result = $this->apply_content_item( $item, $index, $download_images );
+			if ( $result['matched'] ) {
+				++$updated;
+			} else {
+				++$skipped;
+			}
+			$images += $result['images'];
+		}
+
+		return array(
+			'updated' => $updated,
+			'skipped' => $skipped,
+			'images'  => $images,
+		);
+	}
+
+	/**
+	 * Parse a content file, the same way for the whole-file path and the
+	 * per-person one.
+	 *
+	 * @return \SimpleXMLElement|\WP_Error
+	 */
+	private function parse_content_xml( $contents ) {
+		$previous_setting = libxml_use_internal_errors( true );
+		$xml               = simplexml_load_string( $contents, 'SimpleXMLElement', LIBXML_NONET );
+		libxml_clear_errors();
+		libxml_use_internal_errors( $previous_setting );
+
+		if ( false === $xml || ! isset( $xml->channel ) ) {
+			return new \WP_Error( 'invalid_file', __( 'This does not look like a content file.', 'familypedia' ), array( 'status' => 400 ) );
+		}
+
+		return $xml;
+	}
+
+	/**
+	 * Apply one <item> to the person it matches.
+	 *
+	 * @return array array( 'matched' => bool, 'images' => int ).
+	 */
+	private function apply_content_item( $item, $index, $download_images ) {
+		$wp_fields = $item->children( 'http://wordpress.org/export/1.2/' );
+		$title     = trim( (string) $item->title );
+
+		$post_id = $this->match_content_post( $wp_fields, $title, $index );
+		if ( ! $post_id ) {
+			return array(
+				'matched' => false,
+				'images'  => 0,
+			);
+		}
+
+		return array_merge(
+			array( 'matched' => true ),
+			$this->apply_content_item_to_post( $item, $post_id, $download_images )
+		);
+	}
+
+	/**
+	 * Apply one <item> to a person already known to be its match — the
+	 * person a GEDCOM import just resolved, when a content file rides
+	 * along with it. Split out from apply_content_item() since there is
+	 * nothing left to match there.
+	 *
+	 * @return array array( 'images' => int ).
+	 */
+	private function apply_content_item_to_post( $item, $post_id, $download_images ) {
+		$wp_fields  = $item->children( 'http://wordpress.org/export/1.2/' );
+		$content_ns = $item->children( 'http://purl.org/rss/1.0/modules/content/' );
+		$content    = isset( $content_ns->encoded ) ? (string) $content_ns->encoded : '';
+		$image_url  = isset( $wp_fields->attachment_url ) ? trim( (string) $wp_fields->attachment_url ) : '';
+		$images     = 0;
+
+		if ( $download_images ) {
+			if ( $image_url ) {
+				$attachment_id = $this->sideload_image( $image_url, $post_id );
+				if ( $attachment_id ) {
+					set_post_thumbnail( $post_id, $attachment_id );
+					++$images;
+				}
+			}
+
+			foreach ( $wp_fields->content_image_url as $node ) {
+				$url = trim( (string) $node );
+				if ( ! $url ) {
+					continue;
+				}
+				$attachment_id = $this->sideload_image( $url, $post_id );
+				if ( $attachment_id ) {
+					$content = $this->replace_image_reference( $content, $url, wp_get_attachment_url( $attachment_id ) );
+					++$images;
+				}
+			}
+		}
+
+		wp_update_post(
+			wp_slash(
+				array(
+					'ID'           => $post_id,
+					'post_content' => $content,
+				)
+			)
+		);
+
+		return array( 'images' => $images );
+	}
+
+	/**
+	 * Fetch an image into the media library, attached to the given person.
+	 * Only ever called when the upload form's checkbox asked for it.
+	 *
+	 * @return int The new attachment's ID, or 0 on failure.
+	 */
+	private function sideload_image( $url, $post_id ) {
+		if ( ! wp_http_validate_url( $url ) ) {
+			return 0;
+		}
+
+		if ( ! function_exists( 'media_sideload_image' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/media.php';
+			require_once ABSPATH . 'wp-admin/includes/file.php';
+			require_once ABSPATH . 'wp-admin/includes/image.php';
+		}
+
+		$attachment_id = media_sideload_image( $url, $post_id, null, 'id' );
+
+		return is_wp_error( $attachment_id ) ? 0 : $attachment_id;
+	}
+
+	/**
+	 * The text keeps only the path an image lived at on the exporting site
+	 * (see relativize_images()), not its domain — this puts back wherever
+	 * the image now lives here, once it has been downloaded.
+	 */
+	private function replace_image_reference( $content, $original_url, $new_url ) {
+		$path = wp_parse_url( $original_url, PHP_URL_PATH );
+		if ( ! $path ) {
+			return $content;
+		}
+
+		$query = wp_parse_url( $original_url, PHP_URL_QUERY );
+		if ( $query ) {
+			$path .= '?' . $query;
+		}
+
+		return str_replace( $path, $new_url, $content );
+	}
+
+	/**
+	 * The person a content entry belongs to: their xref first, an
+	 * unambiguous exact title match otherwise. A title shared by more than
+	 * one person is left alone rather than guessed at.
+	 */
+	private function match_content_post( $wp_fields, $title, $index ) {
+		$xref = '';
+		foreach ( $wp_fields->postmeta as $meta ) {
+			$meta_fields = $meta->children( 'http://wordpress.org/export/1.2/' );
+			if ( self::CONTENT_META_KEY === (string) $meta_fields->meta_key ) {
+				$xref = (string) $meta_fields->meta_value;
+				break;
+			}
+		}
+
+		if ( $xref && isset( $index['xref'][ $xref ] ) ) {
+			return (int) $index['xref'][ $xref ];
+		}
+
+		$key = strtolower( $title );
+		if ( $key && ! empty( $index['title'][ $key ] ) && 1 === count( $index['title'][ $key ] ) ) {
+			return (int) $index['title'][ $key ][0];
+		}
+
+		return 0;
 	}
 }
