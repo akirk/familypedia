@@ -87,6 +87,7 @@ class App extends BaseApp {
 
 		// A person, optionally with a related page beneath them, and the form
 		// for editing either one's facts.
+		$this->app->route( '(?P<person>[^/]+)/add-page', 'edit-related.php', array( 'person' ) );
 		$this->app->route( '(?P<person>[^/]+)/(?P<related>[^/]+)/edit', 'edit.php', array( 'person', 'related' ) );
 		$this->app->route( '(?P<person>[^/]+)/edit', 'edit.php', array( 'person' ) );
 		$this->app->route( '(?P<person>[^/]+)/(?P<related>[^/]+)', 'person.php', array( 'person', 'related' ) );

@@ -16,7 +16,16 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 $familypedia_person = App::routed_person();
-$familypedia_id     = $familypedia_person ? (int) $familypedia_person->ID : 0;
+
+if ( $familypedia_person && Person::is_related_page( $familypedia_person ) ) {
+	// An existing related page has no facts of its own to show a form
+	// for — only a title, and the block editor already edits that
+	// alongside the text, so there is nothing left for this screen to do.
+	wp_safe_redirect( get_edit_post_link( $familypedia_person->ID, '' ) );
+	exit;
+}
+
+$familypedia_id = $familypedia_person ? (int) $familypedia_person->ID : 0;
 
 if ( $familypedia_id ? ! Editor::can_edit( $familypedia_id ) : ! Editor::can_create() ) {
 	status_header( 403 );

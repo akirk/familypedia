@@ -33,28 +33,27 @@ class Infobox {
 	}
 
 	/**
-	 * The person whose facts a page should show: their own, or their parent's
-	 * when the page is a related page such as "person-name/their-house".
+	 * The person whose facts a page should show: their own, or the
+	 * nearest ancestor's who has any — a related page can itself hold
+	 * further related pages nested under it, such as
+	 * "person-name/their-house/floor-plan".
 	 */
 	public static function facts_post_id_for( $post_id ) {
 		if ( Person::has_data( $post_id ) ) {
 			return (int) $post_id;
 		}
 
-		$parent_id = wp_get_post_parent_id( $post_id );
-		if ( $parent_id && 'publish' === get_post_status( $parent_id ) && Person::has_data( $parent_id ) ) {
-			return (int) $parent_id;
-		}
-
-		return 0;
+		return self::nearest_facts_ancestor( $post_id );
 	}
 
 	/**
-	 * A related page's title, prefixed with the person it belongs to.
+	 * A related page's title, prefixed with the person it belongs to —
+	 * their nearest ancestor with facts, for a page nested several
+	 * related pages deep.
 	 */
 	public static function title_with_parent( $title, $post_id ) {
-		$parent_id = wp_get_post_parent_id( $post_id );
-		if ( ! $parent_id || ! Person::has_data( $parent_id ) ) {
+		$parent_id = self::nearest_facts_ancestor( $post_id );
+		if ( ! $parent_id ) {
 			return $title;
 		}
 
@@ -78,6 +77,30 @@ class Infobox {
 			$parent_title,
 			$child_title
 		);
+	}
+
+	/**
+	 * Walks up from a page through its own chain of parents — as far as
+	 * they are themselves related pages with no facts — to the first
+	 * ancestor that has any, or 0 if the chain ends without one.
+	 */
+	private static function nearest_facts_ancestor( $post_id ) {
+		$parent_id = (int) wp_get_post_parent_id( $post_id );
+		$seen      = array( (int) $post_id => true );
+
+		while ( $parent_id && empty( $seen[ $parent_id ] ) ) {
+			if ( 'publish' !== get_post_status( $parent_id ) ) {
+				return 0;
+			}
+			if ( Person::has_data( $parent_id ) ) {
+				return $parent_id;
+			}
+
+			$seen[ $parent_id ] = true;
+			$parent_id          = (int) wp_get_post_parent_id( $parent_id );
+		}
+
+		return 0;
 	}
 
 	/**
