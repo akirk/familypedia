@@ -287,11 +287,6 @@ body.familypedia ::placeholder {
 	background: var(--familypedia-primary-hover);
 }
 
-.familypedia-button--small {
-	font-size: 0.875rem;
-	padding: 0.2rem 0.6rem;
-}
-
 .familypedia-form fieldset {
 	background: var(--familypedia-surface);
 	border: 1px solid var(--familypedia-border);
@@ -351,9 +346,17 @@ body.familypedia ::placeholder {
 
 .familypedia-field__hint {
 	color: var(--familypedia-muted);
-	display: block;
 	font-size: 0.875rem;
 	margin-top: 0.15rem;
+}
+
+/*
+ * A hint is a line of its own, spans included. Kept off the hidden ones: a
+ * class beats the browser's own rule for the attribute, and a hint given a
+ * display would be drawn while hidden.
+ */
+.familypedia-field__hint:not([hidden]) {
+	display: block;
 }
 
 .familypedia-row {
@@ -444,13 +447,6 @@ body.familypedia ::placeholder {
 	margin: 0.5rem 0 0;
 }
 
-.familypedia-gedcom-review__views {
-	align-items: center;
-	display: flex;
-	flex-wrap: wrap;
-	gap: 0.5rem;
-}
-
 .familypedia-gedcom-review__table {
 	border-collapse: collapse;
 	width: 100%;
@@ -469,16 +465,69 @@ body.familypedia ::placeholder {
 }
 
 /*
- * The selection is drawn by tree.css, the same stylesheet as the tree on the
- * wiki itself. Only the controls this review adds to the lines live here.
+ * The file is drawn by tree.css, the same stylesheet as the tree on the wiki
+ * itself. Only the controls this review adds to the lines live here.
  */
-.familypedia-gedcom-tree__line--branch [data-familypedia-gedcom-node] {
+.familypedia-gedcom-tree__actions {
+	align-items: center;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+}
+
+/* Names on the left, the front page's offer at the far end of the line. */
+.familypedia-gedcom-tree__line {
+	align-items: baseline;
+	display: flex;
+	gap: 1rem;
+	justify-content: space-between;
+}
+
+/* The names run on as text, and wrap inside their half of the line. */
+.familypedia-gedcom-tree__names {
+	min-width: 0;
+}
+
+.familypedia-gedcom-tree__front {
+	color: var(--familypedia-muted);
 	cursor: pointer;
+	flex: none;
+	font-size: 0.9em;
+	white-space: nowrap;
+}
+
+/* A name is the label of its own box, and reads as one thing with it. */
+.familypedia-gedcom-tree__person {
+	cursor: pointer;
+}
+
+/* Quieter than in the wiki's tree, where the years are not up against a box. */
+.familypedia-gedcom-tree .familypedia-tree__years {
+	font-size: 0.8em;
+}
+
+/*
+ * A mark on the lines the footnote under the tree is about. Coloured, because
+ * on a wiki whose pages were all deleted every line carries one and it has to
+ * read as a mark rather than as part of the name.
+ */
+.familypedia-gedcom-tree__note {
+	color: var(--familypedia-primary);
+	font-weight: 600;
+	margin-left: 0.15em;
+}
+
+.familypedia-gedcom-tree__footnote {
+	margin-top: 0.75rem;
+}
+
+.familypedia-gedcom-tree__footnote .familypedia-gedcom-tree__note {
+	margin: 0 0.15em 0 0;
 }
 
 /* The buttons inside the tree are text: the lines have to read as names. */
 .familypedia-gedcom-tree__toggle,
-.familypedia-gedcom-tree__drop {
+.familypedia-gedcom-tree__branch {
 	background: none;
 	border: 0;
 	color: inherit;
@@ -488,11 +537,28 @@ body.familypedia ::placeholder {
 }
 
 /* Set beside the names the way the tree's own "… n more" link is. */
-.familypedia-gedcom-tree__drop {
+.familypedia-gedcom-tree__branch {
 	color: rgba(127, 127, 127, 0.9);
 	font-size: 0.9em;
 	margin-left: 0.8em;
 	text-decoration: underline;
+}
+
+/*
+ * Room around the boxes, so that a column of them does not read as one block
+ * of ticks. Written against the same [type] the wiki's own checkbox rule uses,
+ * which is otherwise the more specific of the two and wins with margin: 0.
+ */
+body.familypedia input[type="checkbox"].familypedia-gedcom-tree__check {
+	margin: 0 0.5em 0 0.25em;
+}
+
+body.familypedia input[type="checkbox"].familypedia-gedcom-tree__front-check {
+	margin: 0 0.35em 0 0;
+}
+
+.familypedia-gedcom-tree .familypedia-tree__list li {
+	margin: 0.4em 0;
 }
 
 /* Narrow enough that the names still line up close to the guide line. */
@@ -502,11 +568,17 @@ body.familypedia ::placeholder {
 	width: 1.1em;
 }
 
+/*
+ * The arrow is set larger than the names it opens. Its width is wound back by
+ * the same amount, so that it takes up exactly as much room as the blank mark
+ * on a line with nothing to fold and the names stay in one column.
+ */
 .familypedia-gedcom-tree__toggle {
 	color: rgba(127, 127, 127, 0.9);
-	font-size: 0.85em;
+	font-size: 1.3em;
 	line-height: 1;
 	vertical-align: baseline;
+	width: 0.85em;
 }
 
 @media (max-width: 40rem) {

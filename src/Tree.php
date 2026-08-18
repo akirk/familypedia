@@ -412,29 +412,6 @@ class Tree {
 		delete_transient( $cache_key );
 	}
 
-	/**
-	 * Where a tree of this family naturally starts: nobody recorded above them,
-	 * and the most people below. Zero when nothing is connected to anything.
-	 */
-	public static function suggest_root() {
-		$best  = 0;
-		$found = 0;
-
-		foreach ( self::get_people() as $id => $person ) {
-			if ( ! empty( $person['parents'] ) || empty( $person['children'] ) ) {
-				continue;
-			}
-
-			$count = self::count_descendants( $id );
-			if ( $count > $found ) {
-				$best  = $id;
-				$found = $count;
-			}
-		}
-
-		return $best;
-	}
-
 	private static function get_cache_key() {
 		return 'familypedia_people_index_' . get_current_blog_id();
 	}

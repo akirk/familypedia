@@ -222,20 +222,23 @@ class Front_Page {
 	}
 
 	/**
-	 * Add a family tree to the end of the front page, starting from one person.
+	 * Add family trees to the end of the front page, one per person given. These
+	 * are asked for a line at a time in the import review, so a page that already
+	 * draws a tree gets another: the request was made about this branch, knowing
+	 * what is already there.
 	 *
-	 * @param int $root Person to start the branch from.
-	 * @return bool Whether a tree was added.
+	 * @param int[] $roots People to start the branches from.
+	 * @return int[] The people a tree was added for, in the order they were added.
 	 */
-	public static function add_tree( $root ) {
-		$root = (int) $root;
-		if ( ! $root || self::has_tree() ) {
-			return false;
+	public static function add_trees( $roots ) {
+		$roots = array_values( array_unique( array_filter( array_map( 'intval', (array) $roots ) ) ) );
+		if ( ! $roots ) {
+			return array();
 		}
 
 		$post = self::ensure_post();
 		if ( ! $post ) {
-			return false;
+			return array();
 		}
 
 		$content = trim( $post->post_content );
@@ -245,7 +248,9 @@ class Front_Page {
 			$content = self::DEFAULT_CONTENT;
 		}
 
-		$content .= "\n\n" . '<!-- wp:familypedia/tree {"root":' . $root . ',"showDates":true} /-->';
+		foreach ( $roots as $root ) {
+			$content .= "\n\n" . '<!-- wp:familypedia/tree {"root":' . $root . ',"showDates":true} /-->';
+		}
 
 		$updated = wp_update_post(
 			array(
@@ -255,7 +260,7 @@ class Front_Page {
 			true
 		);
 
-		return ! is_wp_error( $updated );
+		return is_wp_error( $updated ) ? array() : $roots;
 	}
 
 	public static function can_edit() {

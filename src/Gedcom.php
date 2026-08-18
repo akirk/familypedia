@@ -83,7 +83,7 @@ class Gedcom {
 		$xrefs    = array_keys( $records['INDI'] );
 		$selected = $request->get_param( 'selected' );
 
-		// Null is everyone, which is what the button above the table asks for.
+		// Null is everyone, which is what a request that names nobody asks for.
 		if ( is_array( $selected ) ) {
 			$wanted = array_fill_keys( array_map( 'sanitize_text_field', $selected ), true );
 			$xrefs  = array_values(
@@ -114,7 +114,7 @@ class Gedcom {
 			'claimed'  => array(),
 			'created'  => 0,
 			'updated'  => 0,
-			'tree'     => (bool) $request->get_param( 'front_page_tree' ),
+			'front'    => sanitize_text_field( (string) $request->get_param( 'front_page_roots' ) ),
 		);
 
 		if ( ! set_transient( self::RUN_TRANSIENT_PREFIX . $run, $state, HOUR_IN_SECONDS ) ) {
@@ -236,9 +236,7 @@ class Gedcom {
 			$state['updated']
 		);
 
-		if ( ! empty( $state['tree'] ) && Front_Page::add_tree( Tree::suggest_root() ) ) {
-			$message .= ' ' . __( 'The biggest branch is now on the front page.', 'familypedia' );
-		}
+		$message .= $this->front_page_tree_notice( $state['front'], $state['id_map'] );
 
 		Editor::set_notice( $message );
 
@@ -394,18 +392,23 @@ class Gedcom {
 		$total        = count( $people );
 		$family_count = count( $families );
 		$tree_data    = $this->review_tree_data( $families, $people );
+
+		// Which lines the front page's family trees are grown from. Every import
+		// can add one; only the first import into an empty wiki arrives with one
+		// already ticked.
+		$front_roots = $this->front_page_tree_default() ? $this->first_branch( $people, $tree_data ) : '';
 		?>
 		<section class="familypedia-gedcom-review">
 			<h2><?php esc_html_e( 'Review GEDCOM import', 'familypedia' ); ?></h2>
 			<?php
-			$connected = 0;
-			$matched   = 0;
+			$matched = 0;
+			$trashed = 0;
 			foreach ( $people as $person ) {
-				if ( $person['wiki_hits'] ) {
-					++$connected;
-				}
 				if ( $person['match_id'] ) {
 					++$matched;
+				}
+				if ( $person['match_trash'] ) {
+					++$trashed;
 				}
 			}
 			?>
@@ -420,6 +423,22 @@ class Gedcom {
 						$matched
 					)
 				);
+
+				if ( $trashed ) {
+					echo ' ';
+					echo esc_html(
+						sprintf(
+							// translators: %d is a number of pages in the trash.
+							_n(
+								'%d of those pages is in the trash, and importing brings it back.',
+								'%d of those pages are in the trash, and importing brings them back.',
+								$trashed,
+								'familypedia'
+							),
+							$trashed
+						)
+					);
+				}
 				?>
 			</p>
 			<form method="post" action="<?php echo esc_url( self::get_page_url() ); ?>" data-familypedia-gedcom-form>
@@ -429,93 +448,60 @@ class Gedcom {
 
 				<?php
 				/*
-				 * Taking the whole file is the common case, and picking through a
-				 * table of hundreds to say so is a poor way to spend an afternoon.
-				 * It sits above the table, so the answer to "import all of it" is
-				 * one button before any scrolling starts.
+				 * Taking the whole file is the common case, and scrolling a tree of
+				 * hundreds to say so is a poor way to spend an afternoon. The same
+				 * button stands above and below the tree, saying the same thing: how
+				 * many people are ticked, and that pressing it imports them.
 				 */
+				$import_label = sprintf(
+					// translators: %d is a number of people.
+					_n( 'Import all %d person', 'Import all %d people', $total, 'familypedia' ),
+					$total
+				);
 				?>
 				<div class="familypedia-gedcom-review__actions">
-					<button type="submit" name="familypedia_import_all" value="1" class="familypedia-button familypedia-button--primary">
-						<?php
-						echo esc_html(
-							sprintf(
-								// translators: %d is a number of people.
-								_n( 'Import all %d person', 'Import all %d people', $total, 'familypedia' ),
-								$total
-							)
-						);
-						?>
-					</button>
-					<span class="familypedia-field__hint"><?php esc_html_e( 'Or pick people below and import just those.', 'familypedia' ); ?></span>
+					<button type="submit" class="familypedia-button familypedia-button--primary" data-familypedia-gedcom-submit><?php echo esc_html( $import_label ); ?></button>
+					<span class="familypedia-field__hint"><?php esc_html_e( 'Untick anyone below to leave them out.', 'familypedia' ); ?></span>
 				</div>
 
-				<?php if ( ! Front_Page::has_tree() ) : ?>
-					<p class="familypedia-field familypedia-field--check">
-						<label>
-							<input type="checkbox" name="familypedia_front_page_tree" value="1" <?php checked( $this->front_page_tree_default() ); ?> />
-							<?php esc_html_e( 'Put the biggest branch on the front page as a family tree', 'familypedia' ); ?>
-						</label>
-					</p>
-				<?php endif; ?>
+				<?php
+				/*
+				 * Which branch leads the front page. The tree offers this on every
+				 * line it draws; this carries the answer, and is what the page falls
+				 * back to without script, where there are no lines to tick.
+				 */
+				?>
+				<input type="hidden" name="familypedia_front_page_roots" value="<?php echo esc_attr( $front_roots ); ?>" data-familypedia-gedcom-front-roots />
 
 				<div class="familypedia-gedcom-progress" data-familypedia-gedcom-progress hidden>
 					<progress data-familypedia-gedcom-progress-bar max="100" value="0"></progress>
 					<p class="familypedia-gedcom-progress__text" role="status" data-familypedia-gedcom-progress-text></p>
 				</div>
 
-				<p class="familypedia-gedcom-review__views">
-					<button type="button" class="familypedia-button familypedia-button--primary" data-familypedia-gedcom-view="connected">
-						<?php
-						echo esc_html(
-							sprintf(
-								// translators: %d is a number of people.
-								__( 'Connects to your wiki (%d)', 'familypedia' ),
-								$connected
-							)
-						);
-						?>
-					</button>
-					<button type="button" class="familypedia-button" data-familypedia-gedcom-view="all">
-						<?php
-						echo esc_html(
-							sprintf(
-								// translators: %d is a number of people.
-								__( 'All people (%d)', 'familypedia' ),
-								$total
-							)
-						);
-						?>
-					</button>
-					<input type="search" data-familypedia-gedcom-filter placeholder="<?php esc_attr_e( 'Filter by name', 'familypedia' ); ?>" />
-				</p>
-				<p>
-					<button type="button" class="familypedia-button" data-familypedia-gedcom-select-all><?php esc_html_e( 'Select everyone shown', 'familypedia' ); ?></button>
-					<button type="button" class="familypedia-button" data-familypedia-gedcom-clear><?php esc_html_e( 'Clear selection', 'familypedia' ); ?></button>
-				</p>
+				<?php
+				/*
+				 * Everyone in the file, as a plain list. The tree below is what this
+				 * page is picked through with, and it is drawn by script; without one
+				 * this table is the only way to leave anybody out, so it stays in the
+				 * page and the script hides it.
+				 */
+				?>
 				<table class="familypedia-gedcom-review__table">
 					<thead>
 						<tr>
 							<th scope="col"><span class="screen-reader-text"><?php esc_html_e( 'Import', 'familypedia' ); ?></span></th>
 							<th scope="col"><?php esc_html_e( 'Person', 'familypedia' ); ?></th>
-							<th scope="col"><a href="#" data-familypedia-gedcom-sort="wiki"><?php esc_html_e( 'On your wiki', 'familypedia' ); ?></a></th>
-							<th scope="col"><a href="#" data-familypedia-gedcom-sort="subtree"><?php esc_html_e( 'Subtree', 'familypedia' ); ?></a></th>
+							<th scope="col"><?php esc_html_e( 'On your wiki', 'familypedia' ); ?></th>
+							<th scope="col"><?php esc_html_e( 'Subtree', 'familypedia' ); ?></th>
 							<th scope="col"><?php esc_html_e( 'Birth', 'familypedia' ); ?></th>
 							<th scope="col"><?php esc_html_e( 'Death', 'familypedia' ); ?></th>
-							<th scope="col"><span class="screen-reader-text"><?php esc_html_e( 'Select subtree', 'familypedia' ); ?></span></th>
 						</tr>
 					</thead>
 					<tbody>
 						<?php foreach ( $people as $person ) : ?>
-							<tr
-								data-familypedia-gedcom-row
-								data-name="<?php echo esc_attr( strtolower( $person['name'] ) ); ?>"
-								data-wiki="<?php echo esc_attr( $person['wiki_hits'] ); ?>"
-								data-subtree="<?php echo esc_attr( $person['count'] ); ?>"
-								<?php echo $person['wiki_hits'] ? 'data-connected="1"' : ''; ?>
-							>
+							<tr data-familypedia-gedcom-row>
 								<th scope="row">
-									<input type="checkbox" name="familypedia_people[]" value="<?php echo esc_attr( $person['xref'] ); ?>" data-familypedia-gedcom-person="<?php echo esc_attr( $person['xref'] ); ?>" />
+									<input type="checkbox" name="familypedia_people[]" value="<?php echo esc_attr( $person['xref'] ); ?>" data-familypedia-gedcom-person="<?php echo esc_attr( $person['xref'] ); ?>" checked />
 								</th>
 								<td>
 									<strong><?php echo esc_html( $person['name'] ); ?></strong>
@@ -525,8 +511,11 @@ class Gedcom {
 											<?php
 											echo esc_html(
 												sprintf(
-													// translators: %s is a person's name.
-													__( 'updates “%s”', 'familypedia' ),
+													$person['match_trash']
+														// translators: %s is a person's name.
+														? __( 'restores “%s” from the trash', 'familypedia' )
+														// translators: %s is a person's name.
+														: __( 'updates “%s”', 'familypedia' ),
 													get_the_title( $person['match_id'] )
 												)
 											);
@@ -538,60 +527,60 @@ class Gedcom {
 								<td><?php echo $person['count'] ? esc_html( $person['count'] ) : '<span aria-hidden="true">-</span>'; ?></td>
 								<td><?php echo esc_html( $person['birth'] ); ?></td>
 								<td><?php echo esc_html( $person['death'] ); ?></td>
-								<td>
-									<?php if ( ! empty( $person['descendants'] ) ) : ?>
-										<button type="button" class="familypedia-button familypedia-button--small" data-familypedia-gedcom-descendants="<?php echo esc_attr( implode( ',', array_merge( array( $person['xref'] ), $person['descendants'] ) ) ); ?>">
-											<?php
-											echo esc_html(
-												sprintf(
-													// translators: %d is a number of people in a descendant subtree.
-													__( 'Select subtree (%d)', 'familypedia' ),
-													$person['count'] + 1
-												)
-											);
-											?>
-										</button>
-									<?php else : ?>
-										<span aria-hidden="true">-</span>
-									<?php endif; ?>
-								</td>
 							</tr>
 						<?php endforeach; ?>
 					</tbody>
 				</table>
-				<?php // The wiki's own tree styles draw this, so the selection looks like the pages it will become. ?>
-				<div class="familypedia-gedcom-tree familypedia-tree">
-					<h3><?php esc_html_e( 'Selected people', 'familypedia' ); ?></h3>
-					<p class="familypedia-field__hint" data-familypedia-gedcom-tree-empty><?php esc_html_e( 'Tick people above and the branches you picked are drawn here, so you can drop the ones you did not mean to take.', 'familypedia' ); ?></p>
+				<?php
+				/*
+				 * The wiki's own tree styles draw this, so the file looks like the
+				 * pages it will become. Everyone starts ticked: a file is uploaded to
+				 * be imported, and saying which few people to leave out is less work
+				 * than picking hundreds one at a time.
+				 */
+				?>
+				<div class="familypedia-gedcom-tree familypedia-tree" data-familypedia-gedcom-tree hidden>
+					<p class="familypedia-field__hint"><?php esc_html_e( 'The box at the right of a line adds a family tree block for that branch to the front page.', 'familypedia' ); ?></p>
 					<ul class="familypedia-tree__list" data-familypedia-gedcom-tree-list></ul>
+					<?php if ( $trashed ) : ?>
+						<p class="familypedia-field__hint familypedia-gedcom-tree__footnote">
+							<sup class="familypedia-gedcom-tree__note">1</sup>
+							<?php esc_html_e( 'This person is already on a page that is in the trash. Importing takes it back out rather than writing a second one, so whatever pointed at it still does.', 'familypedia' ); ?>
+						</p>
+					<?php endif; ?>
 					<p class="familypedia-field__hint" data-familypedia-gedcom-tree-more hidden>
 						<?php
 						echo esc_html(
 							sprintf(
-								// translators: %d is a number of people left out of a drawing of the selection.
-								__( '%d more selected people are not drawn here.', 'familypedia' ),
+								// translators: %d is a number of people left out of a drawing of the file.
+								__( '%d more people are not drawn here, and are imported along with the rest.', 'familypedia' ),
 								0
 							)
 						);
 						?>
 					</p>
 				</div>
-				<p>
-					<strong data-familypedia-gedcom-count>
-						<?php
-						echo esc_html(
-							sprintf(
-								// translators: %1$d is a number of selected people, %2$d the total.
-								__( '%1$d of %2$d selected', 'familypedia' ),
-								0,
-								$total
-							)
-						);
-						?>
-					</strong>
+				<?php
+				/*
+				 * How many are being left behind. What is being taken is on the
+				 * button, and how many the file holds is the first line of the
+				 * page, so this says the one thing neither of them does — and
+				 * only while there is something to say.
+				 */
+				?>
+				<p class="familypedia-field__hint" data-familypedia-gedcom-left-out hidden>
+					<?php
+					echo esc_html(
+						sprintf(
+							// translators: %d is a number of people in the file that are not ticked.
+							__( 'Leaving out %d of them.', 'familypedia' ),
+							0
+						)
+					);
+					?>
 				</p>
 				<p>
-					<button type="submit" class="familypedia-button familypedia-button--primary"><?php esc_html_e( 'Import selected people', 'familypedia' ); ?></button>
+					<button type="submit" class="familypedia-button familypedia-button--primary" data-familypedia-gedcom-submit><?php echo esc_html( $import_label ); ?></button>
 				</p>
 			</form>
 			<script type="application/json" id="familypedia-gedcom-tree-data"><?php echo wp_json_encode( $tree_data, JSON_HEX_TAG | JSON_HEX_AMP ); ?></script>
@@ -618,9 +607,30 @@ class Gedcom {
 						'families'   => __( 'Linking families: %1$s of %2$s', 'familypedia' ),
 						// translators: %s is an error message.
 						'failed'     => __( 'The import stopped: %s', 'familypedia' ),
-						'drop'       => __( 'Drop', 'familypedia' ),
-						'dropBranch' => __( 'Drop branch', 'familypedia' ),
+						'uncheck'    => __( 'Uncheck branch', 'familypedia' ),
+						'check'      => __( 'Check branch', 'familypedia' ),
 						'toggle'     => __( 'Show or hide this branch', 'familypedia' ),
+						'front'      => __( 'Front page tree', 'familypedia' ),
+						'trashed'    => __( 'will be restored from trash', 'familypedia' ),
+						/*
+						 * What the import buttons say, kept in step with the ticks.
+						 * Both forms of each are sent because which one is needed
+						 * changes with every tick, and only the browser knows the
+						 * count by then.
+						 */
+						'importAll'  => array(
+							// translators: %d is a number of people.
+							'one'   => __( 'Import all %d person', 'familypedia' ),
+							// translators: %d is a number of people.
+							'other' => __( 'Import all %d people', 'familypedia' ),
+						),
+						'importSome' => array(
+							// translators: %d is a number of people.
+							'one'   => __( 'Import %d person', 'familypedia' ),
+							// translators: %d is a number of people.
+							'other' => __( 'Import %d people', 'familypedia' ),
+						),
+						'importNone' => __( 'Nobody is ticked', 'familypedia' ),
 					),
 				),
 				JSON_HEX_TAG | JSON_HEX_AMP
@@ -632,12 +642,62 @@ class Gedcom {
 	}
 
 	/**
-	 * Whether the front page tree is offered ticked. A wiki with nobody on it yet
+	 * The line the front page tree is offered on: the first branch the review
+	 * draws. The tree starts from the people the file gives no parents, earliest
+	 * born first, and only a line with somebody under it is offered at all — so
+	 * this is the topmost box on the page.
+	 *
+	 * @param array $people The review's people.
+	 * @param array $tree   What was handed to the browser to draw.
+	 */
+	private function first_branch( $people, $tree ) {
+		$has_parents = array();
+		foreach ( $tree as $entry ) {
+			foreach ( ( isset( $entry['children'] ) ? $entry['children'] : array() ) as $child ) {
+				$has_parents[ $child ] = true;
+			}
+		}
+
+		$tops = array();
+		foreach ( $people as $person ) {
+			if ( ! isset( $has_parents[ $person['xref'] ] ) && ! empty( $tree[ $person['xref'] ]['children'] ) ) {
+				$tops[] = $person;
+			}
+		}
+
+		usort( $tops, array( $this, 'sort_by_birth' ) );
+
+		return $tops ? $tops[0]['xref'] : '';
+	}
+
+	/**
+	 * The order the tree draws people in, matching the browser's: undated people
+	 * last, where a missing year would otherwise read as the oldest of every
+	 * household.
+	 */
+	private function sort_by_birth( $a, $b ) {
+		$left  = $a['birth_year'] ? $a['birth_year'] : '9999';
+		$right = $b['birth_year'] ? $b['birth_year'] : '9999';
+
+		if ( $left === $right ) {
+			return strcmp( $a['name'], $b['name'] );
+		}
+
+		return $left < $right ? -1 : 1;
+	}
+
+	/**
+	 * Whether a front page tree is offered ticked. A wiki with nobody on it yet
 	 * is one where this import is the whole family, and a family tree is what its
-	 * front page wants to lead with. On a wiki that already has people, adding to
-	 * their front page is a decision for them to make.
+	 * front page wants to lead with. On a wiki that already has people, or a front
+	 * page that already draws a tree, what leads it is a decision for them to
+	 * make — the boxes are there either way, just empty.
 	 */
 	private function front_page_tree_default() {
+		if ( Front_Page::has_tree() ) {
+			return false;
+		}
+
 		return ! Person::get_all(
 			array(
 				'fields'         => 'ids',
@@ -780,12 +840,7 @@ class Gedcom {
 			$this->fail( 'review_expired' );
 		}
 
-		// A null selection is everybody, which is what the button above the table asks for.
-		if ( empty( $_POST['familypedia_import_all'] ) ) {
-			$selected = isset( $_POST['familypedia_people'] ) && is_array( $_POST['familypedia_people'] ) ? array_map( 'sanitize_text_field', wp_unslash( $_POST['familypedia_people'] ) ) : array();
-		} else {
-			$selected = null;
-		}
+		$selected = isset( $_POST['familypedia_people'] ) && is_array( $_POST['familypedia_people'] ) ? array_map( 'sanitize_text_field', wp_unslash( $_POST['familypedia_people'] ) ) : array();
 
 		$result = $this->import_string( $contents, $selected );
 		if ( is_wp_error( $result ) ) {
@@ -804,10 +859,8 @@ class Gedcom {
 			$result['updated']
 		);
 
-		// The import has just rewritten the family, so ask about it afterwards.
-		if ( ! empty( $_POST['familypedia_front_page_tree'] ) && Front_Page::add_tree( Tree::suggest_root() ) ) {
-			$notice .= ' ' . __( 'The biggest branch is now on the front page.', 'familypedia' );
-		}
+		$front   = isset( $_POST['familypedia_front_page_roots'] ) ? sanitize_text_field( wp_unslash( $_POST['familypedia_front_page_roots'] ) ) : '';
+		$notice .= $this->front_page_tree_notice( $front, $result['ids'] );
 
 		Editor::set_notice( $notice );
 		wp_safe_redirect( Front_Page::url() );
@@ -887,6 +940,44 @@ class Gedcom {
 		return array(
 			'created' => $created,
 			'updated' => $updated,
+			'ids'     => $id_map,
+		);
+	}
+
+	/**
+	 * Lead the front page with the branches that were picked in the review, and
+	 * say so. The choices are GEDCOM xrefs, which only become pages while the
+	 * import runs: a person left out of the selection never gets one, and no tree
+	 * is grown from them.
+	 *
+	 * @param string $xrefs  The people the trees are grown from, comma separated.
+	 * @param array  $id_map GEDCOM xref => post ID, from the import that just ran.
+	 * @return string What to add to the notice, empty when nothing was added.
+	 */
+	private function front_page_tree_notice( $xrefs, $id_map ) {
+		$roots = array();
+		foreach ( array_filter( explode( ',', (string) $xrefs ) ) as $xref ) {
+			if ( ! empty( $id_map[ $xref ] ) ) {
+				$roots[] = $id_map[ $xref ];
+			}
+		}
+
+		$added = Front_Page::add_trees( $roots );
+		if ( ! $added ) {
+			return '';
+		}
+
+		$names = array_map( 'get_the_title', $added );
+
+		return ' ' . sprintf(
+			// translators: %s is a list of people's names.
+			_n(
+				'The family tree of %s is now on the front page.',
+				'The family trees of %s are now on the front page.',
+				count( $names ),
+				'familypedia'
+			),
+			wp_sprintf( '%l', $names )
 		);
 	}
 
@@ -1137,6 +1228,7 @@ class Gedcom {
 				'count'       => count( $subtree ),
 				'wiki_hits'   => $hits,
 				'match_id'    => isset( $matches[ $xref ] ) ? $matches[ $xref ] : 0,
+				'match_trash' => isset( $matches[ $xref ] ) && ! empty( $existing['trashed'][ $matches[ $xref ] ] ),
 			);
 		}
 
@@ -1171,6 +1263,11 @@ class Gedcom {
 			if ( ! empty( $partners_by_person[ $xref ] ) ) {
 				$entry['partners'] = array_values( $partners_by_person[ $xref ] );
 			}
+			// Said on the line, because a page coming back out of the trash is
+			// not what pressing import usually does.
+			if ( $person['match_trash'] ) {
+				$entry['trashed'] = true;
+			}
 
 			$data[ $xref ] = $entry;
 		}
@@ -1184,21 +1281,30 @@ class Gedcom {
 	 */
 	private function existing_page_index() {
 		$index = array(
-			'xref'  => array(),
-			'title' => array(),
+			'xref'    => array(),
+			'title'   => array(),
+			'trashed' => array(),
 		);
 
 		$pages = get_posts(
 			array(
 				'post_type'      => Person::POST_TYPE,
-				'post_status'    => array( 'publish', 'draft', 'private' ),
+				'post_status'    => array( 'publish', 'draft', 'private', 'trash' ),
 				'posts_per_page' => -1,
 				'fields'         => 'ids',
 			)
 		);
 
 		foreach ( $pages as $page_id ) {
-			$title = strtolower( trim( get_the_title( $page_id ) ) );
+			$trashed = 'trash' === get_post_status( $page_id );
+
+			/*
+			 * A page in the trash is only ever claimed back by its xref, which is
+			 * this file saying the page is this person. Matching one by name would
+			 * let an entry that happens to share a name with something somebody
+			 * deleted pull it out of the trash under a new life.
+			 */
+			$title = $trashed ? '' : strtolower( trim( get_the_title( $page_id ) ) );
 			// Every page with this title, not just the first: several people in a
 			// GEDCOM commonly share a name, and each needs its own page.
 			if ( $title ) {
@@ -1206,8 +1312,19 @@ class Gedcom {
 			}
 
 			$xref = get_post_meta( $page_id, self::XREF_META, true );
-			if ( $xref ) {
-				$index['xref'][ $xref ] = $page_id;
+			if ( ! $xref ) {
+				continue;
+			}
+
+			// Where a trashed page and a live one carry the same xref, the one
+			// still on the wiki is the person: the other is a copy left behind.
+			if ( $trashed && isset( $index['xref'][ $xref ] ) ) {
+				continue;
+			}
+
+			$index['xref'][ $xref ] = $page_id;
+			if ( $trashed ) {
+				$index['trashed'][ $page_id ] = true;
 			}
 		}
 
@@ -1420,6 +1537,18 @@ class Gedcom {
 		);
 
 		if ( $existed ) {
+			/*
+			 * A page this person was already on, in the trash. It comes back
+			 * rather than being written a second time: the xref on it says it is
+			 * this person, and everything pointing at it — the relations of
+			 * people not in this file, links, the front page — is pointing at
+			 * this page and not at a copy of it. Untrashing first is what gives
+			 * the slug back, which the trash keeps hold of.
+			 */
+			if ( ! empty( $index['trashed'][ $post_id ] ) ) {
+				wp_untrash_post( $post_id );
+			}
+
 			$data['ID'] = $post_id;
 			unset( $data['post_content'] );
 			$result = wp_update_post( wp_slash( $data ), true );
