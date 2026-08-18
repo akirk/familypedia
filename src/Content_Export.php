@@ -167,12 +167,18 @@ class Content_Export {
 		}
 
 		Editor::set_notice(
-			sprintf(
-				// translators: %1$d is a number of updated pages, %2$d a number of skipped entries.
-				__( 'Updated %1$d pages. %2$d entries in the file did not match a person on the wiki and were skipped.', 'familypedia' ),
-				$result['updated'],
-				$result['skipped']
-			)
+			$result['skipped']
+				? sprintf(
+					// translators: %1$d is a number of updated pages, %2$d a number of skipped entries.
+					__( 'Updated %1$d pages. %2$d entries in the file did not match a person on the wiki and were skipped.', 'familypedia' ),
+					$result['updated'],
+					$result['skipped']
+				)
+				: sprintf(
+					// translators: %d is a number of updated pages.
+					__( 'Updated %d pages.', 'familypedia' ),
+					$result['updated']
+				)
 		);
 		wp_safe_redirect( Gedcom::get_page_url() );
 		exit;
