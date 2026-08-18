@@ -2300,15 +2300,24 @@ class Gedcom {
 
 	/**
 	 * Creates or updates one additional page for each item the content
-	 * file carries under this person's xref, now that the person
-	 * themselves has a post here to be its parent.
+	 * file carries under $parent_key, now that whatever that is — a
+	 * person, or another additional page — has a post here to be its
+	 * parent. Recurses into each one created, since an additional page
+	 * can itself hold further additional pages nested under it.
+	 *
+	 * @param array  $state          The run's accumulated state.
+	 * @param array  $index          content_index()'s result for this token.
+	 * @param string $parent_key     The immediate parent's own key: an
+	 *                                xref for a person, or an "R:…" key
+	 *                                for an additional page.
+	 * @param int    $parent_post_id The immediate parent's post.
 	 */
-	private function apply_related_content_to_person( $state, $index, $parent_xref, $parent_post_id ) {
-		if ( empty( $index['by_related'][ $parent_xref ] ) ) {
+	private function apply_related_content_to_person( $state, $index, $parent_key, $parent_post_id ) {
+		if ( empty( $index['by_related'][ $parent_key ] ) ) {
 			return $state;
 		}
 
-		foreach ( $index['by_related'][ $parent_xref ] as $item ) {
+		foreach ( $index['by_related'][ $parent_key ] as $item ) {
 			$child_id = $this->resolve_related_page( $item, $parent_post_id );
 			if ( ! $child_id || is_wp_error( $child_id ) ) {
 				continue;
@@ -2318,7 +2327,10 @@ class Gedcom {
 			++$state['content']['updated'];
 			$state['content']['images'] += $result['images'];
 
-			$state['related_id_map'][ 'R:' . $parent_xref . ':' . $this->related_item_slug( $item ) ] = $child_id;
+			$child_key = 'R:' . $parent_key . ':' . $this->related_item_slug( $item );
+			$state['related_id_map'][ $child_key ] = $child_id;
+
+			$state = $this->apply_related_content_to_person( $state, $index, $child_key, $child_id );
 		}
 
 		return $state;
@@ -2466,7 +2478,7 @@ class Gedcom {
 		foreach ( $related as $entry ) {
 			$lines = array_merge(
 				$lines,
-				$this->export_content_item_lines( $entry['post'], $link_keys, array( self::CONTENT_RELATED_META_KEY => $entry['parent_xref'] ), $entry['post']->post_name )
+				$this->export_content_item_lines( $entry['post'], $link_keys, array( self::CONTENT_RELATED_META_KEY => $entry['parent_key'] ), $entry['post']->post_name )
 			);
 		}
 
@@ -2527,42 +2539,70 @@ class Gedcom {
 	/**
 	 * Additional pages under an exported person: pages with no facts of
 	 * their own, so GEDCOM has no record of them, but with text this file
-	 * can still carry. Direct children only, matching what the app itself
-	 * treats as an additional page.
+	 * can still carry. Walks the whole subtree beneath a person, not just
+	 * their direct children, since an additional page can itself hold
+	 * further additional pages nested under it.
 	 *
 	 * @param \WP_Post[] $people Exported people.
 	 * @param array      $ids    Post ID => xref, from export_xrefs().
-	 * @return array Each entry: 'post' the child WP_Post, 'parent_xref',
-	 *               and 'key' the target key a link to it is recorded by.
+	 * @return array Each entry: 'post' the child WP_Post, 'parent_key'
+	 *               its immediate parent's own key (a person's xref, or
+	 *               another additional page's own key), and 'key' the
+	 *               target key a link to it — or to a page nested under
+	 *               it in turn — is recorded by.
 	 */
 	private function get_export_related_pages( $people, $ids ) {
 		$related = array();
 
 		foreach ( $people as $person ) {
-			$children = get_posts(
-				array(
-					'post_type'      => Person::POST_TYPE,
-					'post_parent'    => $person->ID,
-					'post_status'    => 'publish',
-					'posts_per_page' => -1,
-				)
-			);
-
-			foreach ( $children as $child ) {
-				// Already exported in its own right as a person with facts.
-				if ( isset( $ids[ $child->ID ] ) ) {
-					continue;
-				}
-
-				$related[] = array(
-					'post'        => $child,
-					'parent_xref' => $ids[ $person->ID ],
-					'key'         => 'R:' . $ids[ $person->ID ] . ':' . $child->post_name,
-				);
-			}
+			$this->collect_related_pages( $person->ID, $ids[ $person->ID ], $ids, $related );
 		}
 
 		return $related;
+	}
+
+	/**
+	 * The recursive step behind get_export_related_pages(): every child
+	 * of $parent_post_id that isn't independently exported as a person,
+	 * tagged with $parent_key, then walked into for pages nested under
+	 * it in turn — in parent-before-child order, since that is the order
+	 * import needs to create them in.
+	 *
+	 * @param int    $parent_post_id The immediate parent to walk children of.
+	 * @param string $parent_key     That parent's own key: an xref for a
+	 *                                person, or an "R:…" key for an
+	 *                                additional page.
+	 * @param array  $ids            Post ID => xref, for people with facts.
+	 * @param array  $related        Accumulator, built up by reference.
+	 */
+	private function collect_related_pages( $parent_post_id, $parent_key, $ids, &$related ) {
+		$children = get_posts(
+			array(
+				'post_type'      => Person::POST_TYPE,
+				'post_parent'    => $parent_post_id,
+				'post_status'    => 'publish',
+				'posts_per_page' => -1,
+			)
+		);
+
+		foreach ( $children as $child ) {
+			// Already exported in its own right as a person with facts:
+			// its own structural parent, if any, is tagged directly onto
+			// its own item by export_content_string() instead.
+			if ( isset( $ids[ $child->ID ] ) ) {
+				continue;
+			}
+
+			$key = 'R:' . $parent_key . ':' . $child->post_name;
+
+			$related[] = array(
+				'post'       => $child,
+				'parent_key' => $parent_key,
+				'key'        => $key,
+			);
+
+			$this->collect_related_pages( $child->ID, $key, $ids, $related );
+		}
 	}
 
 	/**
@@ -2826,33 +2866,59 @@ class Gedcom {
 			$images += $result['images'];
 		}
 
+		// Additional pages, which can themselves hold further additional
+		// pages nested under them. A page's own parent_key isn't
+		// resolvable until that parent's post exists, so this keeps
+		// making passes over whatever is left, resolving one more layer
+		// each time, until a pass makes no progress at all — one layer
+		// of nesting deep does not depend on the file listing a parent
+		// before its children, even though both plugins' own export
+		// always does.
+		$pending = array();
 		foreach ( $xml->channel->item as $item ) {
 			if ( $this->item_meta( $item, self::CONTENT_META_KEY ) ) {
 				continue;
 			}
 
-			$parent_xref = $this->item_meta( $item, self::CONTENT_RELATED_META_KEY );
-			if ( ! $parent_xref ) {
-				continue;
+			$parent_key = $this->item_meta( $item, self::CONTENT_RELATED_META_KEY );
+			if ( $parent_key ) {
+				$pending[] = array( $item, $parent_key );
 			}
-
-			if ( empty( $index['xref'][ $parent_xref ] ) ) {
-				++$skipped;
-				continue;
-			}
-
-			$child_id = $this->resolve_related_page( $item, (int) $index['xref'][ $parent_xref ] );
-			if ( ! $child_id || is_wp_error( $child_id ) ) {
-				++$skipped;
-				continue;
-			}
-
-			$result = $this->apply_content_item_to_post( $item, $child_id, $download_images );
-			++$updated;
-			$images += $result['images'];
-
-			$related_id_map[ 'R:' . $parent_xref . ':' . $this->related_item_slug( $item ) ] = $child_id;
 		}
+
+		$resolved = $index['xref'];
+		$progress = true;
+		while ( $pending && $progress ) {
+			$progress = false;
+			$next     = array();
+
+			foreach ( $pending as $entry ) {
+				list( $item, $parent_key ) = $entry;
+				if ( empty( $resolved[ $parent_key ] ) ) {
+					$next[] = $entry;
+					continue;
+				}
+
+				$child_id = $this->resolve_related_page( $item, (int) $resolved[ $parent_key ] );
+				if ( ! $child_id || is_wp_error( $child_id ) ) {
+					continue;
+				}
+
+				$result = $this->apply_content_item_to_post( $item, $child_id, $download_images );
+				++$updated;
+				$images += $result['images'];
+
+				$child_key                 = 'R:' . $parent_key . ':' . $this->related_item_slug( $item );
+				$resolved[ $child_key ]    = $child_id;
+				$related_id_map[ $child_key ] = $child_id;
+				$progress                  = true;
+			}
+
+			$pending = $next;
+		}
+		// Whatever is left names a parent that never resolved — dropped
+		// from the file, or not exported this time.
+		$skipped += count( $pending );
 
 		return array(
 			'updated'        => $updated,
