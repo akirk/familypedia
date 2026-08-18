@@ -28,6 +28,13 @@ class Gedcom {
 	const CONTENT_META_KEY = '_gedcom_xref';
 
 	/**
+	 * The meta key a link between two exported people travels under: its
+	 * value is the relative path the link was rewritten to, and the xref
+	 * of the person it points to, joined with "|".
+	 */
+	const CONTENT_LINK_META_KEY = '_gedcom_link';
+
+	/**
 	 * The instance Main built, so that the app template renders the page
 	 * through the object that already handled the request.
 	 *
@@ -252,6 +259,14 @@ class Gedcom {
 
 	private function finish_run( $run, $state ) {
 		Main::flush_family_data_cache();
+
+		// Every person this run touched now has a page, so a content
+		// file's links to them can be resolved — while it is still
+		// parked, before it is cleaned up below.
+		if ( ! empty( $state['content'] ) ) {
+			$this->resolve_content_links( $state['token'], $state['id_map'] );
+		}
+
 		$this->delete_import_file( $state['token'] );
 		delete_transient( self::RUN_TRANSIENT_PREFIX . $run );
 
@@ -1004,7 +1019,7 @@ class Gedcom {
 		// The no-JS path has no per-person step for a content file to ride
 		// along with, so it goes in as one whole-file pass instead, while
 		// it is still parked — before delete_import_file() below.
-		$notice = $this->add_content_to_message( $notice, $token );
+		$notice = $this->add_content_to_message( $notice, $token, $result['ids'] );
 
 		$front   = isset( $_POST['familypedia_front_page_roots'] ) ? sanitize_text_field( wp_unslash( $_POST['familypedia_front_page_roots'] ) ) : '';
 		$notice .= $this->front_page_tree_notice( $front, $result['ids'] );
@@ -2245,8 +2260,12 @@ class Gedcom {
 	 * along with, so it goes in as one whole-file pass instead, matched by
 	 * xref or title the same way import_string() matches GEDCOM entries.
 	 * Called while the file is still parked, before delete_import_file().
+	 *
+	 * @param string $message The notice being built up.
+	 * @param string $token   The review token this import used.
+	 * @param array  $id_map  Xref => post ID, from this same import_string() call.
 	 */
-	private function add_content_to_message( $message, $token ) {
+	private function add_content_to_message( $message, $token, $id_map ) {
 		$contents = $this->get_content_file( $token );
 		if ( false === $contents ) {
 			return $message;
@@ -2256,6 +2275,8 @@ class Gedcom {
 		if ( is_wp_error( $result ) ) {
 			return $message;
 		}
+
+		$this->resolve_content_links( $token, $id_map );
 
 		return $message . $this->content_summary_message( $result['updated'], $result['images'] );
 	}
@@ -2286,9 +2307,13 @@ class Gedcom {
 		);
 
 		foreach ( $people as $person ) {
+			$links   = array();
+			$content = $this->relativize_images( $person->post_content );
+			$content = $this->relativize_links( $content, $ids, $links );
+
 			$lines[] = '<item>';
 			$lines[] = '<title>' . $this->cdata( get_the_title( $person ) ) . '</title>';
-			$lines[] = '<content:encoded>' . $this->cdata( $this->relativize_images( $person->post_content ) ) . '</content:encoded>';
+			$lines[] = '<content:encoded>' . $this->cdata( $content ) . '</content:encoded>';
 			if ( has_post_thumbnail( $person ) ) {
 				$lines[] = '<wp:attachment_url>' . $this->cdata( wp_get_attachment_url( get_post_thumbnail_id( $person ) ) ) . '</wp:attachment_url>';
 			}
@@ -2299,6 +2324,12 @@ class Gedcom {
 			$lines[] = '<wp:meta_key>' . $this->cdata( self::CONTENT_META_KEY ) . '</wp:meta_key>';
 			$lines[] = '<wp:meta_value>' . $this->cdata( $ids[ $person->ID ] ) . '</wp:meta_value>';
 			$lines[] = '</wp:postmeta>';
+			foreach ( $links as $path => $target_xref ) {
+				$lines[] = '<wp:postmeta>';
+				$lines[] = '<wp:meta_key>' . $this->cdata( self::CONTENT_LINK_META_KEY ) . '</wp:meta_key>';
+				$lines[] = '<wp:meta_value>' . $this->cdata( $path . '|' . $target_xref ) . '</wp:meta_value>';
+				$lines[] = '</wp:postmeta>';
+			}
 			$lines[] = '</item>';
 		}
 
@@ -2351,6 +2382,115 @@ class Gedcom {
 			},
 			$content
 		);
+	}
+
+	/**
+	 * Strips this site's own domain from same-site links in a person's
+	 * text, the same reason relativize_images() does it for photos. Where
+	 * a link points to another person in this same export, its path and
+	 * the xref it points to are collected into $links by reference, so the
+	 * importer can put back a working link once it knows where that
+	 * person landed there — a person's own URL structure is not something
+	 * a content file can know in advance, especially crossing between two
+	 * different plugins.
+	 */
+	private function relativize_links( $content, $ids, &$links ) {
+		$home = home_url();
+		// People are not a public post type with rewrite rules — their URLs
+		// are resolved by the app itself, not url_to_postid() — so the path
+		// is handed to the same lookup the app's own routing uses.
+		$prefix = '/' . App::URL_PATH . '/';
+
+		return preg_replace_callback(
+			'/(<a\s[^>]*href=["\'])' . preg_quote( $home, '/' ) . '([^"\']*)(["\'])/i',
+			function ( $matches ) use ( $ids, $prefix, &$links ) {
+				$path = $matches[2];
+				if ( 0 === strpos( $path, $prefix ) ) {
+					$person = Person::get_by_path( substr( $path, strlen( $prefix ) ) );
+					if ( $person && isset( $ids[ $person->ID ] ) ) {
+						$links[ $path ] = $ids[ $person->ID ];
+					}
+				}
+
+				return $matches[1] . $path . $matches[3];
+			},
+			$content
+		);
+	}
+
+	/**
+	 * The links a content item's text had to other exported people, as
+	 * path => the xref that link pointed to.
+	 */
+	private function content_links_for_item( $item ) {
+		$wp_fields = $item->children( 'http://wordpress.org/export/1.2/' );
+		$links     = array();
+
+		foreach ( $wp_fields->postmeta as $meta ) {
+			$meta_fields = $meta->children( 'http://wordpress.org/export/1.2/' );
+			if ( self::CONTENT_LINK_META_KEY !== (string) $meta_fields->meta_key ) {
+				continue;
+			}
+
+			$parts = explode( '|', (string) $meta_fields->meta_value, 2 );
+			if ( 2 === count( $parts ) && '' !== $parts[0] ) {
+				$links[ $parts[0] ] = $parts[1];
+			}
+		}
+
+		return $links;
+	}
+
+	/**
+	 * Puts working links back into the text of everyone this run touched
+	 * who had one, now that every person in $id_map has a page here. Called
+	 * while the content file is still parked — it reads the same file
+	 * apply_content_to_person()/apply_content() already read from.
+	 */
+	private function resolve_content_links( $token, $id_map ) {
+		$index = $this->content_index( $token );
+		if ( ! $index ) {
+			return;
+		}
+
+		foreach ( $id_map as $xref => $post_id ) {
+			if ( ! isset( $index['by_xref'][ $xref ] ) ) {
+				continue;
+			}
+
+			$links = $this->content_links_for_item( $index['by_xref'][ $xref ] );
+			if ( ! $links ) {
+				continue;
+			}
+
+			$replacements = array();
+			foreach ( $links as $path => $target_xref ) {
+				if ( isset( $id_map[ $target_xref ] ) ) {
+					$replacements[ $path ] = get_permalink( $id_map[ $target_xref ] );
+				}
+			}
+
+			if ( ! $replacements ) {
+				continue;
+			}
+
+			$post = get_post( $post_id );
+			if ( ! $post ) {
+				continue;
+			}
+
+			$new_content = str_replace( array_keys( $replacements ), array_values( $replacements ), $post->post_content );
+			if ( $new_content !== $post->post_content ) {
+				wp_update_post(
+					wp_slash(
+						array(
+							'ID'           => $post_id,
+							'post_content' => $new_content,
+						)
+					)
+				);
+			}
+		}
 	}
 
 	/**
