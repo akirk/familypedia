@@ -18,6 +18,16 @@ class Gedcom {
 	const BATCH_PEOPLE = 25;
 	const BATCH_FAMILIES = 50;
 
+	/**
+	 * One at a time: unlike the batches above, each of these is an
+	 * outbound request to wherever the file says an image lives, on a
+	 * connection that has already shown itself capable of dropping
+	 * mid-import. Keeping a request to exactly one image keeps whatever
+	 * retrying it after a dropped connection would repeat as small as it
+	 * can be.
+	 */
+	const BATCH_IMAGES = 1;
+
 	const CONTENT_EXPORT_ACTION = 'familypedia_content_export';
 
 	/**
@@ -183,6 +193,8 @@ class Gedcom {
 
 		if ( 'families' === $state['stage'] ) {
 			$state = $this->import_families_batch( $state, $records );
+		} elseif ( 'images' === $state['stage'] ) {
+			$state = $this->import_images_batch( $state );
 		} else {
 			$state = $this->import_people_batch( $state, $records );
 		}
@@ -228,6 +240,38 @@ class Gedcom {
 			// text right after the person themselves — the progress bar is
 			// one person at a time either way.
 			$state = $this->apply_content_to_person( $state, $xref, $person['id'] );
+		}
+
+		if ( $state['cursor'] >= $total ) {
+			if ( ! empty( $state['content']['pending_images'] ) ) {
+				$state['stage'] = 'images';
+			} else {
+				$state['stage'] = $state['families'] ? 'families' : 'done';
+			}
+			$state['cursor'] = 0;
+		}
+
+		return $state;
+	}
+
+	/**
+	 * Downloads one image (BATCH_IMAGES worth, in practice always one) at
+	 * a time from the queue apply_content_to_person() and
+	 * apply_related_content_to_person() built up while creating every
+	 * person and additional page — by the time this stage runs, every
+	 * page any of them belongs to already exists, so a dropped
+	 * connection here never risks recreating or duplicating a page,
+	 * only re-attempting whichever single image was in flight.
+	 */
+	private function import_images_batch( $state ) {
+		$pending = $state['content']['pending_images'];
+		$total   = count( $pending );
+		$end     = min( $total, $state['cursor'] + self::BATCH_IMAGES );
+
+		for ( ; $state['cursor'] < $end; $state['cursor']++ ) {
+			if ( $this->apply_pending_image( $pending[ $state['cursor'] ] ) ) {
+				++$state['content']['images'];
+			}
 		}
 
 		if ( $state['cursor'] >= $total ) {
@@ -308,11 +352,19 @@ class Gedcom {
 	}
 
 	private function run_progress( $state ) {
+		if ( 'families' === $state['stage'] ) {
+			$total = count( $state['families'] );
+		} elseif ( 'images' === $state['stage'] ) {
+			$total = count( $state['content']['pending_images'] );
+		} else {
+			$total = count( $state['xrefs'] );
+		}
+
 		return array(
 			'done'     => false,
 			'stage'    => $state['stage'],
 			'position' => (int) $state['cursor'],
-			'total'    => 'families' === $state['stage'] ? count( $state['families'] ) : count( $state['xrefs'] ),
+			'total'    => $total,
 			'created'  => $state['created'],
 			'updated'  => $state['updated'],
 		);
@@ -695,6 +747,8 @@ class Gedcom {
 						'people'     => __( 'Importing people: %1$s of %2$s', 'familypedia' ),
 						// translators: %1$s is a number of family records done, %2$s the total.
 						'families'   => __( 'Linking families: %1$s of %2$s', 'familypedia' ),
+						// translators: %1$s is a number of images done, %2$s the total.
+						'images'     => __( 'Downloading images: %1$s of %2$s', 'familypedia' ),
 						// translators: %s is an error message.
 						'failed'     => __( 'The import stopped: %s', 'familypedia' ),
 						'uncheck'    => __( 'Uncheck branch', 'familypedia' ),
@@ -2255,9 +2309,10 @@ class Gedcom {
 			return $state;
 		}
 
-		$state['content']        = array(
-			'updated' => 0,
-			'images'  => 0,
+		$state['content']         = array(
+			'updated'        => 0,
+			'images'         => 0,
+			'pending_images' => array(),
 		);
 		$state['related_id_map'] = array();
 		$state['parent_of']      = array();
@@ -2285,10 +2340,10 @@ class Gedcom {
 		}
 
 		if ( isset( $index['by_xref'][ $xref ] ) ) {
-			$item   = $index['by_xref'][ $xref ];
-			$result = $this->apply_content_item_to_post( $item, $post_id, $index['download_images'] );
+			$item  = $index['by_xref'][ $xref ];
+			$tasks = $this->apply_content_text_to_post( $item, $post_id, $index['download_images'] );
 			++$state['content']['updated'];
-			$state['content']['images'] += $result['images'];
+			$state['content']['pending_images'] = array_merge( $state['content']['pending_images'], $tasks );
 
 			$parent_xref = $this->item_meta( $item, self::CONTENT_RELATED_META_KEY );
 			if ( $parent_xref ) {
@@ -2324,9 +2379,9 @@ class Gedcom {
 				continue;
 			}
 
-			$result = $this->apply_content_item_to_post( $item, $child_id, $index['download_images'] );
+			$tasks = $this->apply_content_text_to_post( $item, $child_id, $index['download_images'] );
 			++$state['content']['updated'];
-			$state['content']['images'] += $result['images'];
+			$state['content']['pending_images'] = array_merge( $state['content']['pending_images'], $tasks );
 
 			$child_key = 'R:' . $parent_key . ':' . $this->related_item_slug( $item );
 			$state['related_id_map'][ $child_key ] = $child_id;
@@ -2982,36 +3037,42 @@ class Gedcom {
 	 * along with it. Split out from apply_content_item() since there is
 	 * nothing left to match there.
 	 *
+	 * Downloads any images straight away: this is the no-JS whole-file
+	 * path, which has no batching of its own to spread them across —
+	 * the batched path instead calls apply_content_text_to_post()
+	 * directly and works through the resulting tasks its own way, one
+	 * image at a time.
+	 *
 	 * @return array array( 'images' => int ).
 	 */
 	private function apply_content_item_to_post( $item, $post_id, $download_images ) {
+		$tasks  = $this->apply_content_text_to_post( $item, $post_id, $download_images );
+		$images = 0;
+
+		foreach ( $tasks as $task ) {
+			if ( $this->apply_pending_image( $task ) ) {
+				++$images;
+			}
+		}
+
+		return array( 'images' => $images );
+	}
+
+	/**
+	 * Applies an item's text to a post, without downloading anything.
+	 * Images are only ever queued here, as a list of tasks — each an
+	 * image download plus wherever it needs to be applied — for the
+	 * caller to work through, so that a person with many photos cannot
+	 * make a single request run any longer than one image download
+	 * takes.
+	 *
+	 * @return array Pending tasks: each array( 'post_id', 'type' =>
+	 *               'thumbnail'|'content', 'url' ).
+	 */
+	private function apply_content_text_to_post( $item, $post_id, $download_images ) {
 		$wp_fields  = $item->children( 'http://wordpress.org/export/1.2/' );
 		$content_ns = $item->children( 'http://purl.org/rss/1.0/modules/content/' );
 		$content    = isset( $content_ns->encoded ) ? (string) $content_ns->encoded : '';
-		$image_url  = isset( $wp_fields->attachment_url ) ? trim( (string) $wp_fields->attachment_url ) : '';
-		$images     = 0;
-
-		if ( $download_images ) {
-			if ( $image_url ) {
-				$attachment_id = $this->sideload_image( $image_url, $post_id );
-				if ( $attachment_id ) {
-					set_post_thumbnail( $post_id, $attachment_id );
-					++$images;
-				}
-			}
-
-			foreach ( $wp_fields->content_image_url as $node ) {
-				$url = trim( (string) $node );
-				if ( ! $url ) {
-					continue;
-				}
-				$attachment_id = $this->sideload_image( $url, $post_id );
-				if ( $attachment_id ) {
-					$content = $this->replace_image_reference( $content, $url, wp_get_attachment_url( $attachment_id ) );
-					++$images;
-				}
-			}
-		}
 
 		wp_update_post(
 			wp_slash(
@@ -3022,7 +3083,71 @@ class Gedcom {
 			)
 		);
 
-		return array( 'images' => $images );
+		if ( ! $download_images ) {
+			return array();
+		}
+
+		$tasks     = array();
+		$image_url = isset( $wp_fields->attachment_url ) ? trim( (string) $wp_fields->attachment_url ) : '';
+		if ( $image_url ) {
+			$tasks[] = array(
+				'post_id' => $post_id,
+				'type'    => 'thumbnail',
+				'url'     => $image_url,
+			);
+		}
+
+		foreach ( $wp_fields->content_image_url as $node ) {
+			$url = trim( (string) $node );
+			if ( $url ) {
+				$tasks[] = array(
+					'post_id' => $post_id,
+					'type'    => 'content',
+					'url'     => $url,
+				);
+			}
+		}
+
+		return $tasks;
+	}
+
+	/**
+	 * Downloads one pending image and applies it — a thumbnail set as
+	 * the post's photo, a content image put back into the post's text
+	 * wherever it was referenced. What this whole staged process exists
+	 * to spread across separate requests, one at a time.
+	 *
+	 * @return bool Whether an attachment was actually created.
+	 */
+	private function apply_pending_image( $task ) {
+		$attachment_id = $this->sideload_image( $task['url'], $task['post_id'] );
+		if ( ! $attachment_id ) {
+			return false;
+		}
+
+		if ( 'thumbnail' === $task['type'] ) {
+			set_post_thumbnail( $task['post_id'], $attachment_id );
+			return true;
+		}
+
+		$post = get_post( $task['post_id'] );
+		if ( ! $post ) {
+			return false;
+		}
+
+		$new_content = $this->replace_image_reference( $post->post_content, $task['url'], wp_get_attachment_url( $attachment_id ) );
+		if ( $new_content !== $post->post_content ) {
+			wp_update_post(
+				wp_slash(
+					array(
+						'ID'           => $task['post_id'],
+						'post_content' => $new_content,
+					)
+				)
+			);
+		}
+
+		return true;
 	}
 
 	/**

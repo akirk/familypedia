@@ -635,8 +635,10 @@
 				return;
 			}
 
+			// The server's stage names ('people', 'families', 'images') are
+			// exactly the l10n keys their progress text lives under.
 			say(
-				(state.stage === 'families' ? l10n.families : l10n.people)
+				(l10n[state.stage] || l10n.people)
 					.replace('%1$s', state.position)
 					.replace('%2$s', state.total),
 				state.total ? Math.round((state.position / state.total) * 100) : 0
