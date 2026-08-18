@@ -273,6 +273,7 @@ class Gedcom {
 		// parked, before it is cleaned up below.
 		if ( ! empty( $state['content'] ) ) {
 			$this->resolve_content_links( $state['token'], $state['id_map'], isset( $state['related_id_map'] ) ? $state['related_id_map'] : array() );
+			$this->resolve_related_parents( $state['id_map'], isset( $state['parent_of'] ) ? $state['parent_of'] : array() );
 		}
 
 		$this->delete_import_file( $state['token'] );
@@ -2253,11 +2254,12 @@ class Gedcom {
 			return $state;
 		}
 
-		$state['content']         = array(
+		$state['content']        = array(
 			'updated' => 0,
 			'images'  => 0,
 		);
-		$state['related_id_map']  = array();
+		$state['related_id_map'] = array();
+		$state['parent_of']      = array();
 
 		return $state;
 	}
@@ -2267,7 +2269,9 @@ class Gedcom {
 	 * the post that was just resolved directly — there is nothing left to
 	 * match, since this is the exact page that xref just became. Also
 	 * creates or updates any additional page the content file carries
-	 * under this same person.
+	 * under this same person, and remembers this person's own structural
+	 * parent, if the file recorded one, for resolve_related_parents() to
+	 * apply once every xref in this run has a post.
 	 */
 	private function apply_content_to_person( $state, $xref, $post_id ) {
 		if ( empty( $state['content'] ) || empty( $state['token'] ) ) {
@@ -2280,9 +2284,15 @@ class Gedcom {
 		}
 
 		if ( isset( $index['by_xref'][ $xref ] ) ) {
-			$result = $this->apply_content_item_to_post( $index['by_xref'][ $xref ], $post_id, $index['download_images'] );
+			$item   = $index['by_xref'][ $xref ];
+			$result = $this->apply_content_item_to_post( $item, $post_id, $index['download_images'] );
 			++$state['content']['updated'];
 			$state['content']['images'] += $result['images'];
+
+			$parent_xref = $this->item_meta( $item, self::CONTENT_RELATED_META_KEY );
+			if ( $parent_xref ) {
+				$state['parent_of'][ $post_id ] = $parent_xref;
+			}
 		}
 
 		return $this->apply_related_content_to_person( $state, $index, $xref, $post_id );
@@ -2404,6 +2414,7 @@ class Gedcom {
 		}
 
 		$this->resolve_content_links( $token, $id_map, $result['related_id_map'] );
+		$this->resolve_related_parents( $id_map, $result['parent_of'] );
 
 		return $message . $this->content_summary_message( $result['updated'], $result['images'] );
 	}
@@ -2439,10 +2450,17 @@ class Gedcom {
 		);
 
 		foreach ( $people as $person ) {
-			$lines = array_merge(
-				$lines,
-				$this->export_content_item_lines( $person, $link_keys, array( self::CONTENT_META_KEY => $ids[ $person->ID ] ) )
-			);
+			$meta_pairs  = array( self::CONTENT_META_KEY => $ids[ $person->ID ] );
+			$parent_xref = $this->exported_parent_xref( $person, $ids );
+			if ( $parent_xref ) {
+				// A person can have facts of their own — and so a GEDCOM
+				// individual of their own — while still sitting under
+				// another exported page, the way a page hierarchy can
+				// even where father/mother say nothing about it.
+				$meta_pairs[ self::CONTENT_RELATED_META_KEY ] = $parent_xref;
+			}
+
+			$lines = array_merge( $lines, $this->export_content_item_lines( $person, $link_keys, $meta_pairs ) );
 		}
 
 		foreach ( $related as $entry ) {
@@ -2545,6 +2563,18 @@ class Gedcom {
 		}
 
 		return $related;
+	}
+
+	/**
+	 * The xref of an exported post's own post_parent, when that parent
+	 * was itself exported — the site's page hierarchy, which is a
+	 * different relationship from anything GEDCOM's father/mother
+	 * pointers describe, and is otherwise not carried anywhere.
+	 */
+	private function exported_parent_xref( $post, $ids ) {
+		$parent_id = (int) $post->post_parent;
+
+		return ( $parent_id && isset( $ids[ $parent_id ] ) ) ? $ids[ $parent_id ] : '';
 	}
 
 	/**
@@ -2714,6 +2744,39 @@ class Gedcom {
 	}
 
 	/**
+	 * Sets post_parent on a person who ended up with a GEDCOM individual
+	 * of their own, but whose page the content file also recorded as
+	 * sitting under another exported page — a page hierarchy is a
+	 * separate thing from anything father/mother describes, and nothing
+	 * else carries it across.
+	 *
+	 * @param array $id_map    Xref => post ID for this import.
+	 * @param array $parent_of Post ID => the xref of that post's own
+	 *                         structural parent, from apply_content_to_person()
+	 *                         or apply_content().
+	 */
+	private function resolve_related_parents( $id_map, $parent_of ) {
+		foreach ( $parent_of as $post_id => $parent_xref ) {
+			if ( empty( $id_map[ $parent_xref ] ) ) {
+				continue;
+			}
+
+			$parent_id = (int) $id_map[ $parent_xref ];
+			$post      = get_post( $post_id );
+			if ( $post && (int) $post->post_parent !== $parent_id ) {
+				wp_update_post(
+					wp_slash(
+						array(
+							'ID'          => $post_id,
+							'post_parent' => $parent_id,
+						)
+					)
+				);
+			}
+		}
+	}
+
+	/**
 	 * Apply a content file to the people it matches. Never creates a
 	 * person and never touches anything but post_content — and, when
 	 * asked, a person's photo. Used for the no-JS whole-file path only; a
@@ -2739,17 +2802,24 @@ class Gedcom {
 		$skipped        = 0;
 		$images         = 0;
 		$related_id_map = array();
+		$parent_of      = array();
 
 		foreach ( $xml->channel->item as $item ) {
-			// Additional pages are handled in the second pass below, once
-			// every person they could belong under already has a page.
-			if ( $this->item_meta( $item, self::CONTENT_RELATED_META_KEY ) ) {
+			// An item with no xref of its own is an additional page,
+			// handled in the second pass below, once every person it
+			// could belong under already has a page.
+			if ( ! $this->item_meta( $item, self::CONTENT_META_KEY ) ) {
 				continue;
 			}
 
 			$result = $this->apply_content_item( $item, $index, $download_images );
 			if ( $result['matched'] ) {
 				++$updated;
+
+				$parent_xref = $this->item_meta( $item, self::CONTENT_RELATED_META_KEY );
+				if ( $parent_xref ) {
+					$parent_of[ $result['post_id'] ] = $parent_xref;
+				}
 			} else {
 				++$skipped;
 			}
@@ -2757,6 +2827,10 @@ class Gedcom {
 		}
 
 		foreach ( $xml->channel->item as $item ) {
+			if ( $this->item_meta( $item, self::CONTENT_META_KEY ) ) {
+				continue;
+			}
+
 			$parent_xref = $this->item_meta( $item, self::CONTENT_RELATED_META_KEY );
 			if ( ! $parent_xref ) {
 				continue;
@@ -2785,6 +2859,7 @@ class Gedcom {
 			'skipped'        => $skipped,
 			'images'         => $images,
 			'related_id_map' => $related_id_map,
+			'parent_of'      => $parent_of,
 		);
 	}
 
@@ -2810,7 +2885,7 @@ class Gedcom {
 	/**
 	 * Apply one <item> to the person it matches.
 	 *
-	 * @return array array( 'matched' => bool, 'images' => int ).
+	 * @return array array( 'matched' => bool, 'post_id' => int, 'images' => int ).
 	 */
 	private function apply_content_item( $item, $index, $download_images ) {
 		$wp_fields = $item->children( 'http://wordpress.org/export/1.2/' );
@@ -2820,12 +2895,16 @@ class Gedcom {
 		if ( ! $post_id ) {
 			return array(
 				'matched' => false,
+				'post_id' => 0,
 				'images'  => 0,
 			);
 		}
 
 		return array_merge(
-			array( 'matched' => true ),
+			array(
+				'matched' => true,
+				'post_id' => $post_id,
+			),
 			$this->apply_content_item_to_post( $item, $post_id, $download_images )
 		);
 	}
