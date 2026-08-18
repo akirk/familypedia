@@ -547,6 +547,11 @@
 	var progress = review.querySelector('[data-familypedia-gedcom-progress]');
 	var bar = progress ? progress.querySelector('[data-familypedia-gedcom-progress-bar]') : null;
 	var text = progress ? progress.querySelector('[data-familypedia-gedcom-progress-text]') : null;
+	var retryButton = progress ? progress.querySelector('[data-familypedia-gedcom-retry]') : null;
+	// The run a failure left off at: the server keeps its place by cursor
+	// regardless of why a request never came back, so resuming after a
+	// dropped connection is just asking the same run to carry on.
+	var lastRun = null;
 
 	if (form && progress && settings.endpoint && window.fetch) {
 		form.addEventListener('submit', function (event) {
@@ -565,6 +570,10 @@
 			event.preventDefault();
 			start(selected, frontRoots ? frontRoots.value : '');
 		});
+	}
+
+	if (retryButton) {
+		retryButton.addEventListener('click', retry);
 	}
 
 	function send(url, payload) {
@@ -592,9 +601,30 @@
 
 		send(settings.endpoint, { token: settings.token, selected: selected, front_page_roots: front })
 			.then(function (started) {
+				lastRun = started.run;
 				return step(started.run);
 			})
 			.catch(failed);
+	}
+
+	/**
+	 * Picks a run back up where it left off. A batch's own request either
+	 * finished — its cursor moved on — or never reached the server at all,
+	 * so asking for the same run again is always the right next step; it is
+	 * never asked to redo a batch it already carried out.
+	 */
+	function retry() {
+		if (!lastRun) {
+			return;
+		}
+
+		if (retryButton) {
+			retryButton.hidden = true;
+		}
+		progress.classList.remove('familypedia-gedcom-progress--failed');
+		working(true);
+
+		step(lastRun).catch(failed);
 	}
 
 	function step(run) {
@@ -625,6 +655,11 @@
 		say(l10n.failed.replace('%s', error.message), 0);
 		progress.classList.add('familypedia-gedcom-progress--failed');
 		working(false);
+		// A run that never got as far as a run id has nothing to retry —
+		// starting over is what the still-enabled submit buttons are for.
+		if (retryButton) {
+			retryButton.hidden = !lastRun;
+		}
 		// Whoever was ticked when it stopped is still ticked, and the buttons
 		// say so again rather than coming back as they were before the run.
 		refresh();

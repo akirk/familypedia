@@ -565,6 +565,7 @@ class Gedcom {
 				<div class="familypedia-gedcom-progress" data-familypedia-gedcom-progress hidden>
 					<progress data-familypedia-gedcom-progress-bar max="100" value="0"></progress>
 					<p class="familypedia-gedcom-progress__text" role="status" data-familypedia-gedcom-progress-text></p>
+					<button type="button" class="familypedia-button" data-familypedia-gedcom-retry hidden><?php esc_html_e( 'Retry', 'familypedia' ); ?></button>
 				</div>
 
 				<?php
