@@ -26,6 +26,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 				<?php if ( Editor::can_create() ) : ?>
 					<a href="<?php echo esc_url( home_url( '/' . App::URL_PATH . '/new/' ) ); ?>"><?php esc_html_e( 'Add Person', 'familypedia' ); ?></a>
 				<?php endif; ?>
+				<?php if ( Wiki_Page::can_create() ) : ?>
+					<a href="<?php echo esc_url( Wiki_Page::add_url() ); ?>"><?php esc_html_e( 'Add Page', 'familypedia' ); ?></a>
+				<?php endif; ?>
 				<?php if ( Gedcom::can_use() ) : ?>
 					<a href="<?php echo esc_url( Gedcom::get_page_url() ); ?>"><?php esc_html_e( 'Import / Export', 'familypedia' ); ?></a>
 				<?php endif; ?>
