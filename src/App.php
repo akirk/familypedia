@@ -68,7 +68,7 @@ class App extends BaseApp {
 	 */
 	protected function setup_routes(): void {
 		$this->app->route( '', 'index.php' );
-		$this->app->route( 'people', 'people.php' );
+		$this->app->route( 'all', 'all.php' );
 		$this->app->route( 'new', 'edit.php' );
 		$this->app->route( 'new-page', 'edit-page.php' );
 		$this->app->route( 'tree', 'tree.php' );
@@ -96,7 +96,7 @@ class App extends BaseApp {
 	}
 
 	protected function setup_menu(): void {
-		$this->app->add_menu_item( 'people', __( 'People', 'familypedia' ), home_url( '/' . self::URL_PATH . '/people/' ) );
+		$this->app->add_menu_item( 'all', __( 'All Pages', 'familypedia' ), home_url( '/' . self::URL_PATH . '/all/' ) );
 
 		if ( Calendar::is_calendar_enabled() ) {
 			$this->app->add_menu_item( 'calendar', __( 'Calendar', 'familypedia' ), Calendar::get_calendar_url() );

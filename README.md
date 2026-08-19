@@ -53,15 +53,16 @@ offers each of them with their birth year.
 | Path | What it is |
 | --- | --- |
 | `/familypedia/` | The home page, laid out in the block editor |
-| `/familypedia/people` | Everyone, grouped by initial, with a search |
+| `/familypedia/all` | Everyone and every page, grouped by initial, with a search |
 | `/familypedia/<name>` | A person, their infobox and their text |
 | `/familypedia/<name>/edit` | The form for that person's facts |
-| `/familypedia/<name>/<page>` | A related page beneath a person |
+| `/familypedia/<name>/<page>` | A page hung beneath a person |
 | `/familypedia/calendar` | The family calendar, month by month |
 | `/familypedia/calendar/<month>` | One month on its own |
 | `/familypedia/birthdays` | Birthdays of the living |
 | `/familypedia/tree` and `/familypedia/tree/<name>` | Descendant outlines |
 | `/familypedia/new` | Add a person |
+| `/familypedia/new-page` | Add a standalone page, with no person of its own |
 
 The calendar and birthday pages can be switched off in *Settings → Familypedia*.
 
@@ -125,7 +126,7 @@ Five blocks are available, in a person's text and on the front page alike:
 - **Family Calendar** — every date on the wiki.
 - **Birthday Calendar** — the birthdays of the living.
 - **Family Highlights** — the person of the hour, and the dates coming up next.
-- **Recently Updated People** — the people whose pages changed last.
+- **Recently Updated** — the pages that changed last.
 
 ## Static archives
 

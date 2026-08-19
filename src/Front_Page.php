@@ -340,19 +340,14 @@ class Front_Page {
 		}
 		$return .= '</ul>';
 
-		$total = count(
-			array_filter(
-				Person::get_all( array( 'fields' => 'ids' ) ),
-				function ( $id ) {
-					return ! Wiki_Page::is_page( $id );
-				}
-			)
-		);
+		// All Pages lists people and pages alike, so it needs comparing
+		// against the same total, not just the people among them.
+		$total = count( Person::get_all( array( 'fields' => 'ids' ) ) );
 
 		// Nothing to see beyond what the list above already shows.
 		if ( $total > count( $recent ) ) {
-			$return .= '<p><a href="' . esc_url( home_url( '/' . App::URL_PATH . '/people/' ) ) . '">'
-				. esc_html__( 'List all people', 'familypedia' )
+			$return .= '<p><a href="' . esc_url( home_url( '/' . App::URL_PATH . '/all/' ) ) . '">'
+				. esc_html__( 'List all pages', 'familypedia' )
 				. '</a></p>';
 		}
 

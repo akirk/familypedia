@@ -44,9 +44,9 @@ $familypedia_notice = Editor::take_notice();
 	<div class="familypedia-page">
 		<header class="familypedia-masthead">
 			<a class="familypedia-masthead__home" href="<?php echo esc_url( home_url( '/' . App::URL_PATH . '/' ) ); ?>"><?php echo esc_html( get_bloginfo( 'name' ) ); ?></a>
-			<form class="familypedia-search" role="search" method="get" action="<?php echo esc_url( home_url( '/' . App::URL_PATH . '/people/' ) ); ?>">
-				<label class="screen-reader-text" for="familypedia-search-field"><?php esc_html_e( 'Search people', 'familypedia' ); ?></label>
-				<input id="familypedia-search-field" type="search" name="s" value="<?php echo esc_attr( isset( $_GET['s'] ) ? sanitize_text_field( wp_unslash( $_GET['s'] ) ) : '' ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended ?>" placeholder="<?php esc_attr_e( 'Search people…', 'familypedia' ); ?>" />
+			<form class="familypedia-search" role="search" method="get" action="<?php echo esc_url( home_url( '/' . App::URL_PATH . '/all/' ) ); ?>">
+				<label class="screen-reader-text" for="familypedia-search-field"><?php esc_html_e( 'Search the wiki', 'familypedia' ); ?></label>
+				<input id="familypedia-search-field" type="search" name="s" value="<?php echo esc_attr( isset( $_GET['s'] ) ? sanitize_text_field( wp_unslash( $_GET['s'] ) ) : '' ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended ?>" placeholder="<?php esc_attr_e( 'Search the wiki…', 'familypedia' ); ?>" />
 				<button type="submit" class="familypedia-button"><?php esc_html_e( 'Search', 'familypedia' ); ?></button>
 			</form>
 		</header>

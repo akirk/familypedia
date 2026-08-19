@@ -15,7 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 		<footer class="familypedia-footer">
 			<nav aria-label="<?php esc_attr_e( 'Familypedia', 'familypedia' ); ?>">
-				<a href="<?php echo esc_url( home_url( '/' . App::URL_PATH . '/people/' ) ); ?>"><?php esc_html_e( 'People', 'familypedia' ); ?></a>
+				<a href="<?php echo esc_url( home_url( '/' . App::URL_PATH . '/all/' ) ); ?>"><?php esc_html_e( 'All Pages', 'familypedia' ); ?></a>
 				<?php if ( Calendar::is_calendar_enabled() ) : ?>
 					<a href="<?php echo esc_url( Calendar::get_calendar_url() ); ?>"><?php esc_html_e( 'Calendar', 'familypedia' ); ?></a>
 				<?php endif; ?>
