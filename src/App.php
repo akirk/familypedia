@@ -70,6 +70,7 @@ class App extends BaseApp {
 		$this->app->route( '', 'index.php' );
 		$this->app->route( 'people', 'people.php' );
 		$this->app->route( 'new', 'edit.php' );
+		$this->app->route( 'new-page', 'edit-page.php' );
 		$this->app->route( 'tree', 'tree.php' );
 		$this->app->route( 'tree/(?P<person>[^/]+)', 'tree.php', array( 'person' ) );
 		$this->app->route( Gedcom::URL_PATH, 'import-export.php' );
@@ -109,6 +110,10 @@ class App extends BaseApp {
 
 		if ( Editor::can_create() ) {
 			$this->app->add_menu_item( 'new', __( 'Add Person', 'familypedia' ), home_url( '/' . self::URL_PATH . '/new/' ) );
+		}
+
+		if ( Wiki_Page::can_create() ) {
+			$this->app->add_menu_item( 'new-page', __( 'Add Page', 'familypedia' ), home_url( '/' . self::URL_PATH . '/new-page/' ) );
 		}
 
 		// Everything the app can be reached by is one menu, the one WpApp

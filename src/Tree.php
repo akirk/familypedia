@@ -423,6 +423,13 @@ class Tree {
 		$raw    = array();
 
 		foreach ( $posts as $post ) {
+			// A standalone wiki page has no facts to draw into the tree, and
+			// nothing else here checks for that the way Highlights does with
+			// its birth/death meta_query.
+			if ( Wiki_Page::is_page( $post ) ) {
+				continue;
+			}
+
 			$id = $post->ID;
 
 			$people[ $id ] = array(

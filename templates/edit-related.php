@@ -48,7 +48,7 @@ require __DIR__ . '/partials/header.php';
 
 <form class="familypedia-form" method="post" action="<?php echo esc_url( Related_Page::add_url( $familypedia_parent ) ); ?>">
 	<input type="hidden" name="familypedia_action" value="<?php echo esc_attr( Related_Page::ACTION ); ?>" />
-	<input type="hidden" name="related_id" value="0" />
+	<input type="hidden" name="page_id" value="0" />
 	<input type="hidden" name="parent_id" value="<?php echo esc_attr( $familypedia_parent->ID ); ?>" />
 	<?php wp_nonce_field( Related_Page::ACTION . '_0_' . $familypedia_parent->ID ); ?>
 
