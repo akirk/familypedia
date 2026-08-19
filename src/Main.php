@@ -10,6 +10,7 @@ namespace Familypedia;
 
 class Main {
 	public function __construct() {
+		new Ai_Assistant();
 		new Person();
 		new Bio();
 		new Calendar();
