@@ -349,18 +349,10 @@ class Front_Page {
 			)
 		);
 
-		// Nothing to see beyond what the list above already shows: singular
-		// never reaches here, since that would take a $total of 1 with
-		// nothing else on the wiki to have listed.
+		// Nothing to see beyond what the list above already shows.
 		if ( $total > count( $recent ) ) {
 			$return .= '<p><a href="' . esc_url( home_url( '/' . App::URL_PATH . '/people/' ) ) . '">'
-				. esc_html(
-					sprintf(
-						// translators: %d is a number of people.
-						_n( 'All %d person', 'All %d people', $total, 'familypedia' ),
-						$total
-					)
-				)
+				. esc_html__( 'List all people', 'familypedia' )
 				. '</a></p>';
 		}
 
