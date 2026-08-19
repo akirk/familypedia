@@ -352,8 +352,11 @@ class Front_Page {
 		$return .= '<p><a href="' . esc_url( home_url( '/' . App::URL_PATH . '/people/' ) ) . '">'
 			. esc_html(
 				sprintf(
+					// "All people" names the destination page, so it stays plural
+					// regardless of the count, the way "All Posts (1)" would in
+					// wp-admin.
 					// translators: %d is a number of people.
-					_n( 'All %d person', 'All %d people', $total, 'familypedia' ),
+					__( 'All people (%d)', 'familypedia' ),
 					$total
 				)
 			)
