@@ -349,18 +349,20 @@ class Front_Page {
 			)
 		);
 
-		$return .= '<p><a href="' . esc_url( home_url( '/' . App::URL_PATH . '/people/' ) ) . '">'
-			. esc_html(
-				sprintf(
-					// "All people" names the destination page, so it stays plural
-					// regardless of the count, the way "All Posts (1)" would in
-					// wp-admin.
-					// translators: %d is a number of people.
-					__( 'All people (%d)', 'familypedia' ),
-					$total
+		// Nothing to see beyond what the list above already shows: singular
+		// never reaches here, since that would take a $total of 1 with
+		// nothing else on the wiki to have listed.
+		if ( $total > count( $recent ) ) {
+			$return .= '<p><a href="' . esc_url( home_url( '/' . App::URL_PATH . '/people/' ) ) . '">'
+				. esc_html(
+					sprintf(
+						// translators: %d is a number of people.
+						_n( 'All %d person', 'All %d people', $total, 'familypedia' ),
+						$total
+					)
 				)
-			)
-			. '</a></p>';
+				. '</a></p>';
+		}
 
 		return $return . '</section>';
 	}
