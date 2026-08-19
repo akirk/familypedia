@@ -340,7 +340,14 @@ class Front_Page {
 		}
 		$return .= '</ul>';
 
-		$total = count( Person::get_all( array( 'fields' => 'ids' ) ) );
+		$total = count(
+			array_filter(
+				Person::get_all( array( 'fields' => 'ids' ) ),
+				function ( $id ) {
+					return ! Wiki_Page::is_page( $id );
+				}
+			)
+		);
 
 		$return .= '<p><a href="' . esc_url( home_url( '/' . App::URL_PATH . '/people/' ) ) . '">'
 			. esc_html(

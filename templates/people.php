@@ -24,7 +24,14 @@ $familypedia_page_title = $familypedia_search
 
 require __DIR__ . '/partials/header.php';
 
-$familypedia_people = Person::get_all( $familypedia_search ? array( 's' => $familypedia_search ) : array() );
+$familypedia_people = array_values(
+	array_filter(
+		Person::get_all( $familypedia_search ? array( 's' => $familypedia_search ) : array() ),
+		function ( $familypedia_item ) {
+			return ! Wiki_Page::is_page( $familypedia_item );
+		}
+	)
+);
 
 /**
  * Group by the first letter of the name, which is how you look someone up in a
