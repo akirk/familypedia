@@ -508,20 +508,6 @@ class Person {
 	}
 
 	/**
-	 * Whether a person post is an additional page under another person —
-	 * a chronology, a house, anything with no facts of its own — rather
-	 * than a person in their own right.
-	 */
-	public static function is_related_page( $person ) {
-		$post = get_post( $person );
-		if ( ! $post || self::POST_TYPE !== $post->post_type ) {
-			return false;
-		}
-
-		return $post->post_parent && ! self::has_data( $post->ID );
-	}
-
-	/**
 	 * Whether a person carries any of the recorded facts, which is what decides
 	 * if they get an infobox or appear in an export.
 	 */

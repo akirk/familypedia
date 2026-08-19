@@ -87,7 +87,7 @@ class Links {
 	public static function is_app_route( $path ) {
 		$path = trim( $path, '/' );
 
-		if ( in_array( $path, array( 'people', 'tree', 'new' ), true ) ) {
+		if ( in_array( $path, array( 'all', 'tree', 'new', 'new-page' ), true ) ) {
 			return true;
 		}
 

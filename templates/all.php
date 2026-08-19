@@ -1,6 +1,7 @@
 <?php
 /**
- * Everyone on the wiki, with an optional search.
+ * Every page on the wiki — people and the pages hung off them or standing on
+ * their own alike — with an optional search.
  *
  * @package Familypedia
  */
@@ -20,7 +21,7 @@ $familypedia_page_title = $familypedia_search
 		__( 'Search: %s', 'familypedia' ),
 		$familypedia_search
 	)
-	: __( 'People', 'familypedia' );
+	: __( 'All Pages', 'familypedia' );
 
 require __DIR__ . '/partials/header.php';
 
@@ -44,14 +45,14 @@ ksort( $familypedia_groups );
 <h1><?php echo esc_html( $familypedia_page_title ); ?></h1>
 
 <?php if ( empty( $familypedia_people ) ) : ?>
-	<p><?php esc_html_e( 'Nobody found.', 'familypedia' ); ?></p>
+	<p><?php esc_html_e( 'Nothing found.', 'familypedia' ); ?></p>
 <?php else : ?>
 	<p class="familypedia-people__count">
 		<?php
 		echo esc_html(
 			sprintf(
-				// translators: %d is a number of people.
-				_n( '%d person', '%d people', count( $familypedia_people ), 'familypedia' ),
+				// translators: %d is a number of pages.
+				_n( '%d page', '%d pages', count( $familypedia_people ), 'familypedia' ),
 				count( $familypedia_people )
 			)
 		);

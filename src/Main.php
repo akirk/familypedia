@@ -21,6 +21,7 @@ class Main {
 		new Settings();
 		new Static_Archive();
 		new Tree();
+		new Wiki_Page();
 
 		add_action( 'save_post_' . Person::POST_TYPE, array( __CLASS__, 'flush_family_data_cache' ) );
 		add_action( 'before_delete_post', array( __CLASS__, 'flush_family_data_cache' ) );

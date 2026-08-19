@@ -22,8 +22,8 @@
 	} );
 
 	blocks.registerBlockType( 'familypedia/recent', {
-		title: __( 'Recently Updated People', 'familypedia' ),
-		description: __( 'The people whose pages changed last.', 'familypedia' ),
+		title: __( 'Recently Updated', 'familypedia' ),
+		description: __( 'The pages that changed last.', 'familypedia' ),
 		icon: 'backup',
 		category: 'widgets',
 
@@ -35,7 +35,7 @@
 				el( blockEditor.InspectorControls, {},
 					el( components.PanelBody, { title: __( 'List', 'familypedia' ) },
 						el( components.RangeControl, {
-							label: __( 'People to show', 'familypedia' ),
+							label: __( 'Pages to show', 'familypedia' ),
 							value: attributes.count,
 							onChange: function ( value ) {
 								setAttributes( { count: value } );
