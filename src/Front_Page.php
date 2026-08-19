@@ -24,11 +24,10 @@ class Front_Page {
 
 	/**
 	 * What a fresh front page holds, and what is rendered when the post is
-	 * missing: the page as it looked before it could be edited. The
-	 * Recently Updated People block is still available to add by hand; it
-	 * is no longer part of the default.
+	 * missing: the page as it looked before it could be edited, with the
+	 * list of what changed most recently underneath.
 	 */
-	const DEFAULT_CONTENT = '<!-- wp:familypedia/highlights /-->';
+	const DEFAULT_CONTENT = '<!-- wp:familypedia/highlights /-->' . "\n\n" . '<!-- wp:familypedia/recent /-->';
 
 	const RECENT_LIMIT = 10;
 
@@ -224,10 +223,11 @@ class Front_Page {
 	}
 
 	/**
-	 * Add family trees to the end of the front page, one per person given. These
-	 * are asked for a line at a time in the import review, so a page that already
-	 * draws a tree gets another: the request was made about this branch, knowing
-	 * what is already there.
+	 * Add family trees to the front page, one per person given, ahead of the
+	 * Recently Updated block if it is there. These are asked for a line at a
+	 * time in the import review, so a page that already draws a tree gets
+	 * another: the request was made about this branch, knowing what is
+	 * already there.
 	 *
 	 * @param int[] $roots People to start the branches from.
 	 * @return int[] The people a tree was added for, in the order they were added.
@@ -246,12 +246,23 @@ class Front_Page {
 		$content = trim( $post->post_content );
 		if ( '' === $content ) {
 			// An empty post renders the default content, so appending to nothing
-			// would quietly drop the block the page was showing.
+			// would quietly drop the blocks the page was showing.
 			$content = self::DEFAULT_CONTENT;
 		}
 
+		$trees = array();
 		foreach ( $roots as $root ) {
-			$content .= "\n\n" . '<!-- wp:familypedia/tree {"root":' . $root . ',"showDates":true} /-->';
+			$trees[] = '<!-- wp:familypedia/tree {"root":' . $root . ',"showDates":true} /-->';
+		}
+		$trees = implode( "\n\n", $trees );
+
+		$marker = '<!-- wp:' . self::BLOCK_RECENT . ' ';
+		$marker_pos = strpos( $content, $marker );
+
+		if ( false !== $marker_pos ) {
+			$content = rtrim( substr( $content, 0, $marker_pos ) ) . "\n\n" . $trees . "\n\n" . substr( $content, $marker_pos );
+		} else {
+			$content = rtrim( $content ) . "\n\n" . $trees;
 		}
 
 		$updated = wp_update_post(
