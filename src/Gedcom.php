@@ -1184,6 +1184,22 @@ class Gedcom {
 	}
 
 	/**
+	 * Apply a content file on its own — the same whole-file pass
+	 * add_content_to_message() runs a parked upload through, exposed here
+	 * for anything that already has a content file in hand and a GEDCOM
+	 * import's xrefs to match it against, without a token to park behind.
+	 *
+	 * @param string $contents        The content file, in the format
+	 *                                 export_content_download() writes.
+	 * @param bool   $download_images Whether to fetch each item's images
+	 *                                 into the media library.
+	 * @return array|\WP_Error See apply_content().
+	 */
+	public function apply_content_string( $contents, $download_images = false ) {
+		return $this->apply_content( $contents, $download_images );
+	}
+
+	/**
 	 * Lead the front page with the branches that were picked in the review, and
 	 * say so. The choices are GEDCOM xrefs, which only become pages while the
 	 * import runs: a person left out of the selection never gets one, and no tree
