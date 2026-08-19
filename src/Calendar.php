@@ -605,4 +605,57 @@ class Calendar {
 
 		return $return;
 	}
+
+	/**
+	 * Structured event data for API consumers such as AI Assistant, rather than
+	 * the HTML the calendar views render.
+	 *
+	 * @param int      $days  How many days ahead to include.
+	 * @param string[] $types Event types to include: born, died, married.
+	 * @return array[] Events sorted by the date they next occur.
+	 */
+	public function get_upcoming_events( $days = 30, $types = array( 'born', 'died', 'married' ) ) {
+		$types  = array_intersect( array( 'born', 'died', 'married' ), (array) $types );
+		$dates  = $this->get_dates();
+		$today  = new \DateTime( 'today' );
+		$window = ( clone $today )->modify( '+' . max( 0, (int) $days ) . ' days' );
+		$events = array();
+
+		foreach ( $dates as $month_day => $day_events ) {
+			foreach ( $day_events as $event ) {
+				if ( ! in_array( $event['type'], $types, true ) ) {
+					continue;
+				}
+
+				list( $month, $day ) = explode( '-', $month_day );
+				$occurs_on            = \DateTime::createFromFormat( 'Y-m-d', $today->format( 'Y' ) . '-' . $month . '-' . $day );
+				if ( ! $occurs_on ) {
+					continue;
+				}
+				if ( $occurs_on < $today ) {
+					$occurs_on->modify( '+1 year' );
+				}
+				if ( $occurs_on > $window ) {
+					continue;
+				}
+
+				$events[] = array(
+					'type'          => $event['type'],
+					'person_id'     => (int) $event['ID'],
+					'label'         => wp_strip_all_tags( $event['text'] ),
+					'occurs_on'     => $occurs_on->format( 'Y-m-d' ),
+					'original_date' => $event['date']->format( 'Y-m-d' ),
+				);
+			}
+		}
+
+		usort(
+			$events,
+			function ( $a, $b ) {
+				return strcmp( $a['occurs_on'], $b['occurs_on'] );
+			}
+		);
+
+		return $events;
+	}
 }
