@@ -14,7 +14,6 @@ class Private_Site {
 		add_action( 'opml_head', array( $this, 'opml_head' ) );
 		add_filter( 'bloginfo', array( $this, 'bloginfo' ), 3, 2 );
 		add_filter( 'preprocess_comment', array( $this, 'parse_request' ), 0 );
-		add_filter( 'robots_txt', array( $this, 'robots_txt' ) );
 	}
 
 	public function blog_privacy_selector() {
@@ -130,7 +129,7 @@ class Private_Site {
 			return null;
 		}
 
-		if ( get_option( 'blog_public' ) === -1 ) {
+		if ( $this->is_private() ) {
 			return new \WP_Error( 'private_site', __( 'This site is private.', 'familypedia' ), array( 'status' => 403 ) );
 		}
 
@@ -153,8 +152,5 @@ class Private_Site {
 		}
 
 		return $value;
-	}
-	public function robots_txt() {
-		return "User-agent: *\nDisallow: /\n";
 	}
 }
