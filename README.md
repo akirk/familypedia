@@ -2,7 +2,7 @@
 
 - Contributors: akirk
 - Tags: family, wiki, genealogy, gedcom
-- Tested up to: 6.8
+- Tested up to: 7.1
 - Requires PHP: 7.4
 - License: [GPLv2 or later](http://www.gnu.org/licenses/gpl-2.0.html)
 - Stable tag: 1.0.0
