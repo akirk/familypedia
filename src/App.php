@@ -22,8 +22,11 @@ class App extends BaseApp {
 				'app_name'                     => $this->get_plugin_name(),
 				'app_name_textdomain'          => 'familypedia',
 				'require_login'                => true,
-				'my_apps'                      => true,
-				'my_apps_icon'                 => 'dashicons-groups',
+				'launcher'                     => true,
+				'app_icon'                     => 'dashicons-groups',
+				// Owned content: REST reads are gated with the app's capability and
+				// OpenStation keeps these menus out of its dock.
+				'post_types'                   => array( Person::POST_TYPE, Front_Page::POST_TYPE ),
 				// A wiki about a family is read by the family, so the masterbar
 				// is only useful once you are signed in.
 				'show_masterbar_for_anonymous' => false,
