@@ -87,9 +87,8 @@ People use WordPress's page capabilities, so *Editor* and *Administrator* can
 edit them straight away. The plugin also adds *Wiki User* (can edit) and
 *Wiki Editor* (can also delete).
 
-*Settings → Reading* gains an option to make the site private, visible only to
-administrators, editors and wiki users. On a wiki about living people that is
-usually the option you want.
+Everything under `/familypedia/` requires a login; the rest of the site is
+left as it is.
 
 ## Wiki links
 
