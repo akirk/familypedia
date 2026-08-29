@@ -323,10 +323,27 @@ class Front_Page {
 		if ( empty( $recent ) ) {
 			$return .= '<p>' . esc_html__( 'This wiki has no people yet.', 'familypedia' ) . '</p>';
 
+			// Somebody arriving with a family tree app's export should not have
+			// to find Import at the far end of the menu: a GEDCOM is the usual
+			// starting point, so it is offered first, and adding by hand second.
+			$actions = array();
+			if ( Gedcom::can_import() ) {
+				$actions[] = '<a class="familypedia-button familypedia-button--primary" href="'
+					. esc_url( Gedcom::get_page_url() ) . '">'
+					. esc_html__( 'Import a GEDCOM file', 'familypedia' ) . '</a>';
+			}
 			if ( Editor::can_create() ) {
-				$return .= '<p><a class="familypedia-button familypedia-button--primary" href="'
+				$actions[] = '<a class="familypedia-button' . ( $actions ? '' : ' familypedia-button--primary' ) . '" href="'
 					. esc_url( home_url( '/' . App::URL_PATH . '/new/' ) ) . '">'
-					. esc_html__( 'Add the first person', 'familypedia' ) . '</a></p>';
+					. esc_html__( 'Add the first person', 'familypedia' ) . '</a>';
+			}
+			if ( $actions ) {
+				$return .= '<p class="familypedia-recent__actions">' . implode( ' ', $actions ) . '</p>';
+			}
+			if ( Gedcom::can_import() ) {
+				$return .= '<p class="familypedia-field__hint">'
+					. esc_html__( 'GEDCOM is the file format Ancestry, MyHeritage, FamilySearch, Gramps and most other family tree apps export to.', 'familypedia' )
+					. '</p>';
 			}
 
 			return $return . '</section>';

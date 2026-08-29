@@ -602,3 +602,9 @@ body.familypedia input[type="checkbox"].familypedia-gedcom-tree__front-check {
 	width: 1px;
 	word-wrap: normal !important;
 }
+
+.familypedia-recent__actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+}
