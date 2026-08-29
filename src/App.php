@@ -24,6 +24,9 @@ class App extends BaseApp {
 				'require_login'                => true,
 				'launcher'                     => true,
 				'app_icon'                     => 'dashicons-groups',
+				'app_icon_background'          => 'linear-gradient(135deg, #11998e, #38ef7d)',
+				'app_icon_color'               => '#fff',
+				'app_icon_shadow'              => true,
 				// Owned content: REST reads are gated with the app's capability and
 				// OpenStation keeps these menus out of its dock.
 				'post_types'                   => array( Person::POST_TYPE, Front_Page::POST_TYPE ),
