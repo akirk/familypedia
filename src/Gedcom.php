@@ -792,10 +792,11 @@ class Gedcom {
 				),
 				JSON_HEX_TAG | JSON_HEX_AMP
 			) . ';',
-			true
+			true,
+			App::URL_PATH
 		);
 
-		wp_app_enqueue_script( 'familypedia-gedcom', Assets::url( 'gedcom.js' ), array(), Assets::version( 'gedcom.js' ), true );
+		wp_app_enqueue_script( 'familypedia-gedcom', Assets::url( 'gedcom.js' ), array(), Assets::version( 'gedcom.js' ), true, App::URL_PATH );
 	}
 
 	/**

@@ -287,6 +287,6 @@ $familypedia_value = function ( $field ) use ( $familypedia_id ) {
 </form>
 
 <?php
-wp_app_enqueue_script( 'familypedia-form', Assets::url( 'form.js' ), array(), Assets::version( 'form.js' ), true );
+wp_app_enqueue_script( 'familypedia-form', Assets::url( 'form.js' ), array(), Assets::version( 'form.js' ), true, App::URL_PATH );
 
 require __DIR__ . '/partials/footer.php';

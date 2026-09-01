@@ -33,12 +33,12 @@ class Assets {
 	 * them on their own, without the app's page chrome.
 	 */
 	public static function enqueue_app_style() {
-		wp_app_enqueue_style( 'familypedia-content', self::url( 'content.css' ), array(), self::version( 'content.css' ) );
-		wp_app_enqueue_style( 'familypedia-app', self::url( 'app.css' ), array(), self::version( 'app.css' ) );
-		wp_app_enqueue_style( 'familypedia-tree', self::url( 'tree.css' ), array(), self::version( 'tree.css' ) );
+		wp_app_enqueue_style( 'familypedia-content', self::url( 'content.css' ), array(), self::version( 'content.css' ), App::URL_PATH );
+		wp_app_enqueue_style( 'familypedia-app', self::url( 'app.css' ), array(), self::version( 'app.css' ), App::URL_PATH );
+		wp_app_enqueue_style( 'familypedia-tree', self::url( 'tree.css' ), array(), self::version( 'tree.css' ), App::URL_PATH );
 
 		if ( Settings::get_infobox_settings()['collapse_mobile'] ) {
-			wp_app_enqueue_script( 'familypedia-infobox', self::url( 'infobox.js' ), array(), self::version( 'infobox.js' ), true );
+			wp_app_enqueue_script( 'familypedia-infobox', self::url( 'infobox.js' ), array(), self::version( 'infobox.js' ), true, App::URL_PATH );
 		}
 	}
 
