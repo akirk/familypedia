@@ -1,7 +1,7 @@
 # Familypedia
 
 - Contributors: akirk
-- Tags: genealogy, gedcom, family-tree, family, wiki
+- Tags: genealogy, gedcom, family-tree, wiki, wp-app
 - Requires at least: 6.0
 - Requires PHP: 7.4
 - Tested up to: 7.1
