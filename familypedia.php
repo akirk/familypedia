@@ -8,7 +8,9 @@
  * Tested up to: 7.1
  * Requires PHP: 7.4
  * Author: Alex Kirk
+ * Author URI: https://alex.kirk.at/
  * License: GPL-2.0-or-later
+ * License URI: https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain: familypedia
  *
  * @package Familypedia
@@ -41,8 +43,8 @@ spl_autoload_register(
 add_action(
 	'plugins_loaded',
 	function () {
-		load_plugin_textdomain( 'familypedia' );
-
+		// Translations are loaded automatically since WordPress 6.7, and by
+		// WordPress.org since 4.6, so load_plugin_textdomain() is not called.
 		$app = new App();
 		$app->init();
 	}

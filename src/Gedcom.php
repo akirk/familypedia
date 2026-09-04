@@ -875,6 +875,7 @@ class Gedcom {
 		nocache_headers();
 		header( 'Content-Type: text/plain; charset=UTF-8' );
 		header( 'Content-Disposition: attachment; filename="' . $filename . '"' );
+		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- This is the body of a text/plain GEDCOM download, not HTML; escaping it would corrupt the file.
 		echo $this->export_string();
 		exit;
 	}
@@ -895,11 +896,12 @@ class Gedcom {
 			$this->fail( $error );
 		}
 
-		if ( empty( $_FILES['gedcom']['tmp_name'] ) || ! is_uploaded_file( $_FILES['gedcom']['tmp_name'] ) ) {
+		$tmp_name = isset( $_FILES['gedcom']['tmp_name'] ) ? sanitize_text_field( wp_unslash( $_FILES['gedcom']['tmp_name'] ) ) : '';
+		if ( '' === $tmp_name || ! is_uploaded_file( $tmp_name ) ) {
 			$this->fail( 'missing_file' );
 		}
 
-		$contents = file_get_contents( $_FILES['gedcom']['tmp_name'] );
+		$contents = file_get_contents( $tmp_name );
 		if ( false === $contents || '' === trim( $contents ) ) {
 			$this->fail( 'empty_file' );
 		}
@@ -960,11 +962,16 @@ class Gedcom {
 	 * import fails.
 	 */
 	private function park_content_file( $token ) {
-		if ( empty( $_FILES['content']['tmp_name'] ) || UPLOAD_ERR_OK !== (int) $_FILES['content']['error'] || ! is_uploaded_file( $_FILES['content']['tmp_name'] ) ) {
+		// The nonce was verified by import_upload(), the only caller.
+		// phpcs:disable WordPress.Security.NonceVerification.Missing
+		$tmp_name     = isset( $_FILES['content']['tmp_name'] ) ? sanitize_text_field( wp_unslash( $_FILES['content']['tmp_name'] ) ) : '';
+		$upload_error = isset( $_FILES['content']['error'] ) ? (int) $_FILES['content']['error'] : UPLOAD_ERR_NO_FILE;
+		// phpcs:enable WordPress.Security.NonceVerification.Missing
+		if ( '' === $tmp_name || UPLOAD_ERR_OK !== $upload_error || ! is_uploaded_file( $tmp_name ) ) {
 			return;
 		}
 
-		$contents = file_get_contents( $_FILES['content']['tmp_name'] ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+		$contents = file_get_contents( $tmp_name ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
 		if ( false === $contents || '' === trim( $contents ) || is_wp_error( $this->parse_content_xml( $contents ) ) ) {
 			return;
 		}
@@ -2522,6 +2529,7 @@ class Gedcom {
 		nocache_headers();
 		header( 'Content-Type: text/xml; charset=UTF-8' );
 		header( 'Content-Disposition: attachment; filename="' . $filename . '"' );
+		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- This is the body of a text/xml download, not HTML; every value in the document is already wrapped in CDATA by cdata(), and escaping it would corrupt the file.
 		echo $this->export_content_string();
 		exit;
 	}
