@@ -1,13 +1,15 @@
 # Familypedia
 
 - Contributors: akirk
-- Tags: family, wiki, genealogy, gedcom
-- Tested up to: 7.1
+- Tags: genealogy, gedcom, family-tree, family, wiki
+- Requires at least: 6.0
 - Requires PHP: 7.4
-- License: [GPLv2 or later](http://www.gnu.org/licenses/gpl-2.0.html)
+- Tested up to: 7.1
 - Stable tag: 1.0.0
+- License: GPL-2.0-or-later
+- License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Like Wikipedia, but private and just for your family.
+Like Wikipedia, but private and just for your family — stories and photos for every relative, compatible with other family tree apps via GEDCOM.
 
 [Try Familypedia in WordPress Playground](https://playground.wordpress.net/?blueprint-url=https://raw.githubusercontent.com/akirk/familypedia/main/blueprint.json) · [Try it with demo data](https://playground.wordpress.net/?blueprint-url=https://raw.githubusercontent.com/akirk/familypedia/main/demo.json)
 
@@ -38,7 +40,7 @@ deliberate differences:
 The whole wiki lives under one path, `/familypedia/`, rendered by the app's own
 templates rather than by the site's theme.
 
-## How editing works
+### How editing works
 
 Two halves, each where it belongs:
 
@@ -52,7 +54,7 @@ a link to them; one that does not is kept as plain text, so a grandmother can be
 recorded before anyone writes her page. Where two people share a name the picker
 offers each of them with their birth year.
 
-## Pages
+### Pages
 
 | Path | What it is |
 | --- | --- |
@@ -70,7 +72,7 @@ offers each of them with their birth year.
 
 The calendar and birthday pages can be switched off in *Settings → Familypedia*.
 
-## The front page
+### The front page
 
 The home page is a post, edited in the block editor under *Familypedia → Front
 Page* or from the *Edit this page* link at the foot of the page itself. It starts
@@ -81,7 +83,7 @@ import offers to do that for you.
 
 Emptying the post puts those two blocks back: the home page is never blank.
 
-## Roles and privacy
+### Roles and privacy
 
 People use WordPress's page capabilities, so *Editor* and *Administrator* can
 edit them straight away. The plugin also adds *Wiki User* (can edit) and
@@ -90,14 +92,14 @@ edit them straight away. The plugin also adds *Wiki User* (can edit) and
 Everything under `/familypedia/` requires a login; the rest of the site is
 left as it is.
 
-## Wiki links
+### Wiki links
 
 Links in a person's text are resolved as the page is rendered: a link to
 somebody who exists points at their page in the app, one to somebody who does
 not is marked red and offers to create them, and a link that leaves the site is
 marked green.
 
-## GEDCOM import and export
+### GEDCOM import and export
 
 Administrators import and export GEDCOM files on the app's own
 *Import / Export* page. An upload opens a review step, which leads with a button
@@ -121,7 +123,7 @@ name — and
 where a birth year is known on both sides it has to agree, so one person is not
 overwritten by a namesake.
 
-## Blocks
+### Blocks
 
 Five blocks are available, in a person's text and on the front page alike:
 
@@ -131,7 +133,7 @@ Five blocks are available, in a person's text and on the front page alike:
 - **Family Highlights** — the person of the hour, and the dates coming up next.
 - **Recently Updated** — the pages that changed last.
 
-## Static archives
+### Static archives
 
 With [Static Archive](https://github.com/akirk/static-archive) installed, people
 are offered alongside posts and pages and are archived the way the app renders
@@ -145,7 +147,7 @@ Static Archive files non-page post types as `<year>/<post-type>-<id>`, so people
 are archived by ID rather than by name. Changing that needs a filter in Static
 Archive itself.
 
-## Cross-wiki links
+### Cross-wiki links
 
 On WordPress multisite you can link related family wikis from the same network
 in *Settings → Familypedia*. When the same person exists on both, the infobox
@@ -153,7 +155,7 @@ shows an *Also on* row; when a local link is missing, a peer wiki is checked
 before it is marked red. Add a slug mapping when the two wikis use different
 slugs for the same person.
 
-## Relationship to Family Wiki
+### Relationship to Family Wiki
 
 The two plugins share most of their logic, and Familypedia's GEDCOM handling,
 calendar, infobox, biography, tree and static-archive support are ports of
@@ -171,3 +173,79 @@ Two bugs were fixed along the way and are worth carrying back:
 They are not meant to run on the same site: Family Wiki keeps people in pages,
 Familypedia keeps them in its own post type, and nothing migrates between the
 two automatically. A GEDCOM export from one imports into the other.
+
+Development happens [on GitHub](https://github.com/akirk/familypedia). Pull
+requests and [issues](https://github.com/akirk/familypedia/issues) are welcome
+there.
+
+## Installation
+
+1. Upload the `familypedia` directory to the `/wp-content/plugins/` directory, or install the plugin through the *Plugins* screen in WordPress.
+1. Activate the plugin through the *Plugins* menu in WordPress.
+1. Visit `/familypedia/` on your site to open the wiki, and add your first relative with *Add a person*.
+1. If you already keep a family tree elsewhere, export it as a GEDCOM file and import it on the app's *Import / Export* page instead.
+
+## Frequently Asked Questions
+
+### Does this take over my whole site?
+
+No. People are stored in the plugin's own custom post type and the wiki is
+rendered under a single path, `/familypedia/`, by the plugin's own templates.
+The rest of the site — its pages, posts and theme — is left exactly as it was.
+
+### Who can see the family wiki?
+
+Everything under `/familypedia/` requires a login. Beyond the built-in *Editor*
+and *Administrator* roles, the plugin adds *Wiki User*, who can edit people, and
+*Wiki Editor*, who can also delete them.
+
+### Can I import my existing family tree?
+
+Yes. Familypedia reads GEDCOM, the interchange format written by Ancestry,
+MyHeritage, Gramps and most other genealogy software. An upload opens a review
+step where you can take the whole file, or pick individual people or whole
+descendant subtrees. It exports GEDCOM again, so nothing is locked in.
+
+### Does re-importing my own export duplicate everybody?
+
+No. Each person keeps the GEDCOM xref they were imported with, and the export
+writes it back out. On import, people are matched by that xref first and by name
+second — and where a birth year is known on both sides it has to agree, so a
+namesake is never overwritten.
+
+### Does it need Advanced Custom Fields or any other plugin?
+
+No. Facts about a person are stored as ordinary post meta and edited by a form
+inside the app. [Static Archive](https://github.com/akirk/static-archive) is
+supported if you have it, but nothing requires it.
+
+### Can I run several family wikis on one network?
+
+Yes. On WordPress multisite, related wikis can be linked to each other in
+*Settings → Familypedia*: the infobox then shows an *Also on* row for a person
+who exists on both, and a link that has no local match is looked up on a peer
+wiki before it is marked as missing.
+
+### Where do I write a person's story?
+
+In the block editor in wp-admin, under *Familypedia → People*. The dates,
+places and relationships are edited separately, in the app itself, at
+`/familypedia/<name>/edit`.
+
+## Screenshots
+
+1. A person's page in the wiki: their infobox of dates, places and relatives beside their story.
+
+## Changelog
+
+### 1.0.0
+
+- First release.
+- Wikipedia-style pages for each relative under a single `/familypedia/` path, rendered by the plugin's own templates.
+- People stored in a custom post type, with facts as post meta edited by a form inside the app.
+- GEDCOM import with a review step, batched over several requests, and GEDCOM export that preserves xrefs.
+- Family calendar, birthday list, descendant tree outlines and an alphabetical index of everyone.
+- Five blocks: Family Tree, Family Calendar, Birthday Calendar, Family Highlights and Recently Updated.
+- Block-editor front page, login-gated wiki pages and the *Wiki User* and *Wiki Editor* roles.
+- Cross-wiki links between related family wikis on a multisite network.
+- Static Archive support for archiving people as they are rendered.
