@@ -234,7 +234,7 @@ places and relationships are edited separately, in the app itself, at
 
 ## Screenshots
 
-1. A person's page in the wiki: their infobox of dates, places and relatives beside their story.
+1. The wiki's front page: a descendant tree of the family beside the highlights box, with the person of the hour and the dates coming up next.
 
 ## Changelog
 
