@@ -193,7 +193,7 @@ class Editor {
 		}
 
 		$rows = array();
-		// phpcs:ignore WordPress.Security.NonceVerification.Missing
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- The nonce was verified by maybe_save(); every field of every row is run through sanitize_text_field() below.
 		foreach ( wp_unslash( $_POST['marriages'] ) as $row ) {
 			if ( ! is_array( $row ) ) {
 				continue;

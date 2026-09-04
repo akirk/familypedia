@@ -35,7 +35,7 @@ $familypedia_notice = Editor::take_notice();
 <head>
 	<meta charset="<?php bloginfo( 'charset' ); ?>">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title><?php echo wp_app_title( $familypedia_page_title ); ?></title>
+	<title><?php echo wp_app_title( $familypedia_page_title ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- wp_app_title() runs its return value through esc_html(); escaping again would double-encode entities. ?></title>
 	<?php wp_app_head(); ?>
 </head>
 <body class="familypedia">
