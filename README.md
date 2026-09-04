@@ -11,11 +11,11 @@
 
 Like Wikipedia, but private and just for your family — stories and photos for every relative, compatible with other family tree apps via GEDCOM.
 
+## Description
+
 [Try Familypedia in WordPress Playground](https://playground.wordpress.net/?blueprint-url=https://raw.githubusercontent.com/akirk/familypedia/main/blueprint.json) · [Try it with demo data](https://playground.wordpress.net/?blueprint-url=https://raw.githubusercontent.com/akirk/familypedia/main/demo.json)
 
 [Try it in OpenStation](https://playground.wordpress.net/?blueprint-url=https://raw.githubusercontent.com/akirk/familypedia/main/blueprint-openstation.json) — the same app opened in desktop mode with the [OpenStation](https://github.com/WordPress/openstation) plugin.
-
-## Description
 
 Familypedia turns your WordPress site into a private, Wikipedia-style
 encyclopedia about your family. Each relative gets their own page for their
