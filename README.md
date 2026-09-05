@@ -235,6 +235,7 @@ places and relationships are edited separately, in the app itself, at
 ## Screenshots
 
 1. The wiki's front page: a descendant tree of the family beside the highlights box, with the person of the hour and the dates coming up next.
+2. A person's page: the biography beside a facts box of birth, death, spouse and children, each name linking on to its own page.
 
 ## Changelog
 
