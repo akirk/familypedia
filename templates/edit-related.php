@@ -1,4 +1,5 @@
 <?php
+// phpcs:disable WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedVariableFound -- Template variables are render-local state.
 /**
  * The form for adding a new page under a person: a title and its parent
  * only. Like everywhere else in the app, the page's own text is written in

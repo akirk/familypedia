@@ -1,4 +1,5 @@
 <?php
+// phpcs:disable WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedVariableFound -- Template variables are render-local state.
 /**
  * The form for adding a new standalone page: a title only, with no parent.
  * Like everywhere else in the app, the page's own text is written in the
