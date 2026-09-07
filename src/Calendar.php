@@ -1,4 +1,5 @@
 <?php
+// phpcs:disable WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- Calendar entries are intentionally selected by person metadata.
 /**
  * The family calendar and the birthday list.
  *
