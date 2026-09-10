@@ -422,6 +422,8 @@ class Gedcom {
 	}
 
 	public function render_page() {
+		wp_app_enqueue_script( 'familypedia-gedcom-download', Assets::url( 'gedcom-download.js' ), array(), Assets::version( 'gedcom-download.js' ), true, App::URL_PATH );
+
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
 		$review = isset( $_GET['familypedia_review'] ) ? sanitize_key( wp_unslash( $_GET['familypedia_review'] ) ) : '';
 
@@ -454,35 +456,6 @@ class Gedcom {
 				</form>
 				<?php $this->render_content_export_button(); ?>
 			</section>
-			<?php
-		}
-
-		if ( self::can_import() || self::can_export() ) {
-			?>
-			<style>
-				.familypedia-download-form {
-					align-items: center;
-					display: inline-flex;
-				}
-
-				.familypedia-download-check {
-					color: #008a20;
-					font-weight: 600;
-					margin-left: 0.5em;
-				}
-			</style>
-			<script>
-				(function () {
-					document.querySelectorAll( '.familypedia-download-form' ).forEach( function ( form ) {
-						form.addEventListener( 'submit', function () {
-							var check = form.querySelector( '.familypedia-download-check' );
-							if ( check ) {
-								check.hidden = false;
-							}
-						} );
-					} );
-				}());
-			</script>
 			<?php
 		}
 	}
@@ -542,8 +515,46 @@ class Gedcom {
 		// can add one; only the first import into an empty wiki arrives with one
 		// already ticked.
 		$front_roots = $this->front_page_tree_default() ? $this->first_branch( $people, $tree_data ) : '';
+		$settings    = array(
+			'endpoint' => rest_url( 'familypedia/v1/import' ),
+			'nonce'    => wp_create_nonce( 'wp_rest' ),
+			'token'    => $token,
+			'l10n'     => array(
+				'starting'   => __( 'Reading the file…', 'familypedia' ),
+				// translators: %1$s is a number of people done, %2$s the total.
+				'people'     => __( 'Importing people: %1$s of %2$s', 'familypedia' ),
+				// translators: %1$s is a number of family records done, %2$s the total.
+				'families'   => __( 'Linking families: %1$s of %2$s', 'familypedia' ),
+				// translators: %1$s is a number of images done, %2$s the total.
+				'images'     => __( 'Downloading images: %1$s of %2$s', 'familypedia' ),
+				// translators: %s is an error message.
+				'failed'     => __( 'The import stopped: %s', 'familypedia' ),
+				'uncheck'    => __( 'Uncheck branch', 'familypedia' ),
+				'check'      => __( 'Check branch', 'familypedia' ),
+				'toggle'     => __( 'Show or hide this branch', 'familypedia' ),
+				'front'      => __( 'Front page tree', 'familypedia' ),
+				'trashed'    => __( 'will be restored from trash', 'familypedia' ),
+				'importAll'  => array(
+					// translators: %d is a number of people.
+					'one'   => __( 'Import all %d person', 'familypedia' ),
+					// translators: %d is a number of people.
+					'other' => __( 'Import all %d people', 'familypedia' ),
+				),
+				'importSome' => array(
+					// translators: %d is a number of people.
+					'one'   => __( 'Import %d person', 'familypedia' ),
+					// translators: %d is a number of people.
+					'other' => __( 'Import %d people', 'familypedia' ),
+				),
+				'importNone' => __( 'Nobody is ticked', 'familypedia' ),
+			),
+		);
 		?>
-		<section class="familypedia-gedcom-review">
+		<section
+			class="familypedia-gedcom-review"
+			data-familypedia-gedcom-tree="<?php echo esc_attr( wp_json_encode( $tree_data, JSON_HEX_TAG | JSON_HEX_AMP ) ); ?>"
+			data-familypedia-gedcom-settings="<?php echo esc_attr( wp_json_encode( $settings, JSON_HEX_TAG | JSON_HEX_AMP ) ); ?>"
+		>
 			<h2><?php esc_html_e( 'Review GEDCOM import', 'familypedia' ); ?></h2>
 			<?php
 			$matched = 0;
@@ -738,64 +749,8 @@ class Gedcom {
 					<button type="submit" class="familypedia-button familypedia-button--primary" data-familypedia-gedcom-submit><?php echo esc_html( $import_label ); ?></button>
 				</p>
 			</form>
-			<script type="application/json" id="familypedia-gedcom-tree-data"><?php echo wp_json_encode( $tree_data, JSON_HEX_TAG | JSON_HEX_AMP ); ?></script>
 		</section>
 		<?php
-		/*
-		 * What wp_localize_script() would print, printed the way app pages take
-		 * scripts: wp_app_enqueue_script() writes its own tag rather than going
-		 * through WP_Scripts, so there is no registered handle to attach to. The
-		 * inline script is queued first, so it lands above the file that reads it.
-		 */
-		wp_app_add_inline_script(
-			'familypedia-gedcom',
-			'var familypediaGedcom = ' . wp_json_encode(
-				array(
-					'endpoint' => rest_url( 'familypedia/v1/import' ),
-					'nonce'    => wp_create_nonce( 'wp_rest' ),
-					'token'    => $token,
-					'l10n'     => array(
-						'starting'   => __( 'Reading the file…', 'familypedia' ),
-						// translators: %1$s is a number of people done, %2$s the total.
-						'people'     => __( 'Importing people: %1$s of %2$s', 'familypedia' ),
-						// translators: %1$s is a number of family records done, %2$s the total.
-						'families'   => __( 'Linking families: %1$s of %2$s', 'familypedia' ),
-						// translators: %1$s is a number of images done, %2$s the total.
-						'images'     => __( 'Downloading images: %1$s of %2$s', 'familypedia' ),
-						// translators: %s is an error message.
-						'failed'     => __( 'The import stopped: %s', 'familypedia' ),
-						'uncheck'    => __( 'Uncheck branch', 'familypedia' ),
-						'check'      => __( 'Check branch', 'familypedia' ),
-						'toggle'     => __( 'Show or hide this branch', 'familypedia' ),
-						'front'      => __( 'Front page tree', 'familypedia' ),
-						'trashed'    => __( 'will be restored from trash', 'familypedia' ),
-						/*
-						 * What the import buttons say, kept in step with the ticks.
-						 * Both forms of each are sent because which one is needed
-						 * changes with every tick, and only the browser knows the
-						 * count by then.
-						 */
-						'importAll'  => array(
-							// translators: %d is a number of people.
-							'one'   => __( 'Import all %d person', 'familypedia' ),
-							// translators: %d is a number of people.
-							'other' => __( 'Import all %d people', 'familypedia' ),
-						),
-						'importSome' => array(
-							// translators: %d is a number of people.
-							'one'   => __( 'Import %d person', 'familypedia' ),
-							// translators: %d is a number of people.
-							'other' => __( 'Import %d people', 'familypedia' ),
-						),
-						'importNone' => __( 'Nobody is ticked', 'familypedia' ),
-					),
-				),
-				JSON_HEX_TAG | JSON_HEX_AMP
-			) . ';',
-			true,
-			App::URL_PATH
-		);
-
 		wp_app_enqueue_script( 'familypedia-gedcom', Assets::url( 'gedcom.js' ), array(), Assets::version( 'gedcom.js' ), true, App::URL_PATH );
 	}
 
