@@ -3,7 +3,7 @@
  * Plugin Name: Familypedia
  * Plugin URI: https://wpapps.kirk.at/apps/familypedia/
  * Description: Like Wikipedia, but private and just for your family — stories and photos for every relative, compatible with other family tree apps via GEDCOM.
- * Version: 1.0.0
+ * Version: 1.0.0+ce2b8bdb1ad9
  * Requires at least: 6.0
  * Tested up to: 7.1
  * Requires PHP: 7.4
