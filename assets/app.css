@@ -402,6 +402,17 @@ body.familypedia ::placeholder {
 	margin: 0 0 2rem;
 }
 
+.familypedia-download-form {
+	align-items: center;
+	display: inline-flex;
+}
+
+.familypedia-download-check {
+	color: #008a20;
+	font-weight: 600;
+	margin-left: 0.5em;
+}
+
 /* Taking the whole file is the common case, so it reads as the main action. */
 .familypedia-gedcom-review__actions {
 	align-items: center;

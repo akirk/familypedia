@@ -192,11 +192,13 @@ class Static_Archive {
 	 */
 	private static function assets() {
 		$css = Assets::contents( 'content.css' ) . "\n" . Assets::contents( 'tree.css' );
+		// phpcs:ignore WordPress.WP.EnqueuedResources.NonEnqueuedStylesheet -- This is a generated standalone archive document, not a WordPress page.
 		$out = trim( $css ) ? '<style>' . $css . '</style>' : '';
 
 		if ( Settings::get_infobox_settings()['collapse_mobile'] ) {
 			$js = Assets::contents( 'infobox.js' );
 			if ( trim( $js ) ) {
+				// phpcs:ignore WordPress.WP.EnqueuedResources.NonEnqueuedScript -- This is a generated standalone archive document, not a WordPress page.
 				$out .= '<script>' . $js . '</script>';
 			}
 		}

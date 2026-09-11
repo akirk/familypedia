@@ -9,6 +9,7 @@ class Settings {
 	public function __construct() {
 		add_action( 'admin_menu', array( $this, 'admin_menu' ) );
 		add_action( 'admin_init', array( $this, 'admin_init' ) );
+		add_action( 'admin_enqueue_scripts', array( $this, 'admin_enqueue_scripts' ) );
 	}
 
 	public function admin_menu() {
@@ -18,6 +19,27 @@ class Settings {
 			'manage_options',
 			self::PAGE,
 			array( $this, 'render_page' )
+		);
+	}
+
+	public function admin_enqueue_scripts( $hook_suffix ) {
+		if ( 'settings_page_' . self::PAGE !== $hook_suffix ) {
+			return;
+		}
+
+		wp_enqueue_style(
+			'familypedia-settings',
+			Assets::url( 'settings.css' ),
+			array(),
+			Assets::version( 'settings.css' )
+		);
+
+		wp_enqueue_script(
+			'familypedia-settings',
+			Assets::url( 'settings.js' ),
+			array(),
+			Assets::version( 'settings.js' ),
+			true
 		);
 	}
 
@@ -102,91 +124,6 @@ class Settings {
 		?>
 		<div class="wrap">
 			<h1><?php esc_html_e( 'Familypedia Settings', 'familypedia' ); ?></h1>
-			<style>
-				.familypedia-settings__sites {
-					display: grid;
-					gap: 1rem;
-					max-width: 70rem;
-				}
-
-				.familypedia-settings__section {
-					max-width: 70rem;
-				}
-
-				.familypedia-settings__intro {
-					margin: 1rem 0;
-					max-width: 70rem;
-				}
-
-				.familypedia-settings__intro h2 {
-					margin-top: 0;
-				}
-
-				.familypedia-settings__intro ul {
-					list-style: disc;
-					margin-left: 1.5rem;
-				}
-
-				.familypedia-settings__site {
-					border: 1px solid #c3c4c7;
-					padding: 1rem;
-				}
-
-				.familypedia-settings__site-header {
-					align-items: start;
-					display: flex;
-					gap: 1rem;
-					justify-content: space-between;
-				}
-
-				.familypedia-settings__fields {
-					display: grid;
-					gap: 1rem;
-					grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
-					margin-top: 1rem;
-				}
-
-				.familypedia-settings__mapping {
-					align-items: end;
-					display: grid;
-					gap: 0.75rem;
-					grid-template-columns: minmax(12rem, 1fr) minmax(12rem, 1fr) auto;
-					margin: 0.75rem 0;
-				}
-
-				.familypedia-settings__field label {
-					display: block;
-					font-weight: 600;
-					margin-bottom: 0.25rem;
-				}
-
-				.familypedia-settings__choices label {
-					display: block;
-					margin: 0.65rem 0;
-				}
-
-				.familypedia-settings__notice {
-					border-left: 4px solid #dba617;
-					max-width: 70rem;
-				}
-
-				.familypedia-settings__site-template,
-				.familypedia-settings__mapping-template {
-					display: none;
-				}
-
-				.button.familypedia-settings__remove {
-					border-color: #b32d2e;
-					color: #b32d2e;
-				}
-
-				.button.familypedia-settings__remove:hover,
-				.button.familypedia-settings__remove:focus {
-					background: #fcf0f1;
-					border-color: #b32d2e;
-					color: #b32d2e;
-				}
-			</style>
 			<form method="post" action="options.php">
 				<?php settings_fields( self::PAGE ); ?>
 
@@ -281,55 +218,6 @@ class Settings {
 				<div class="familypedia-settings__mapping-template" data-familypedia-mapping-template>
 					<?php $this->render_mapping_row( '__site__', '__mapping__', '', '', 'familypedia-remote-people-__site__' ); ?>
 				</div>
-
-				<script>
-					(function () {
-						var sites = document.querySelector('[data-familypedia-sites]');
-						var siteTemplate = document.querySelector('[data-familypedia-site-template]');
-						var mappingTemplate = document.querySelector('[data-familypedia-mapping-template]');
-
-						document.addEventListener('click', function (event) {
-							var addSite = event.target.closest('[data-familypedia-add-site]');
-							if (addSite) {
-								var index = String(Date.now());
-								var wrapper = document.createElement('div');
-								wrapper.innerHTML = siteTemplate.innerHTML.replace(/__site__/g, index);
-								sites.appendChild(wrapper.firstElementChild);
-								var empty = document.querySelector('[data-familypedia-empty]');
-								if (empty) {
-									empty.remove();
-								}
-								return;
-							}
-
-							var removeSite = event.target.closest('[data-familypedia-remove-site]');
-							if (removeSite) {
-								removeSite.closest('[data-familypedia-site]').remove();
-								return;
-							}
-
-							var addMapping = event.target.closest('[data-familypedia-add-mapping]');
-							if (addMapping) {
-								var site = addMapping.closest('[data-familypedia-site]');
-								var siteIndex = site.getAttribute('data-familypedia-site');
-								var mappingIndex = String(Date.now());
-								var remoteList = 'familypedia-remote-people-' + siteIndex;
-								var wrapper = document.createElement('div');
-								wrapper.innerHTML = mappingTemplate.innerHTML
-									.replace(/__site__/g, siteIndex)
-									.replace(/__mapping__/g, mappingIndex)
-									.replace(/familypedia-remote-people-__site__/g, remoteList);
-								site.querySelector('[data-familypedia-mappings]').appendChild(wrapper.firstElementChild);
-								return;
-							}
-
-							var removeMapping = event.target.closest('[data-familypedia-remove-mapping]');
-							if (removeMapping) {
-								removeMapping.closest('[data-familypedia-mapping]').remove();
-							}
-						});
-					}());
-				</script>
 			<?php endif; ?>
 		</div>
 		<?php

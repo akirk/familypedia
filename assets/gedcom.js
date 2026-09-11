@@ -20,7 +20,7 @@
 	var rows = Array.prototype.slice.call(review.querySelectorAll('[data-familypedia-gedcom-row]'));
 	var submits = Array.prototype.slice.call(review.querySelectorAll('[data-familypedia-gedcom-submit]'));
 
-	var tree = JSON.parse(document.getElementById('familypedia-gedcom-tree-data').textContent);
+	var tree = JSON.parse(review.getAttribute('data-familypedia-gedcom-tree') || '{}');
 	var treeBox = review.querySelector('[data-familypedia-gedcom-tree]');
 	var treeList = review.querySelector('[data-familypedia-gedcom-tree-list]');
 	var treeMore = review.querySelector('[data-familypedia-gedcom-tree-more]');
@@ -29,7 +29,7 @@
 	// Only there while the front page is short of a family tree, and what the
 	// form posts: the boxes in the lines write it, and it ticks them back.
 	var frontRoots = review.querySelector('[data-familypedia-gedcom-front-roots]');
-	var settings = window.familypediaGedcom || {};
+	var settings = JSON.parse(review.getAttribute('data-familypedia-gedcom-settings') || '{}');
 	var l10n = settings.l10n || {};
 	var uncheckLabel = l10n.uncheck;
 	var checkLabel = l10n.check;
